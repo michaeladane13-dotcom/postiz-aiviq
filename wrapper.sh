@@ -6,28 +6,32 @@ NGINX_PORT=${PORT:-8080}
 
 mkdir -p /run/nginx /var/lib/nginx/tmp
 
-# Test config
 nginx -t 2>&1
-
-# Start nginx, capture stderr to file
 nginx -g "daemon off;" 2>/tmp/nginx.err &
 NGINX_PID=$!
-echo "[WRAPPER] nginx started PID=$NGINX_PID"
+echo "[WRAPPER] nginx PID=$NGINX_PID"
 
 sleep 2
 
-# Check if nginx is still alive
 if kill -0 $NGINX_PID 2>/dev/null; then
-    echo "[WRAPPER] nginx is ALIVE after 2s"
+    echo "[WRAPPER] nginx ALIVE"
 else
-    echo "[WRAPPER] nginx DIED. Error output:"
+    echo "[WRAPPER] nginx DIED:"
     cat /tmp/nginx.err
-    echo "[WRAPPER] Trying to restart without daemon off..."
-    nginx 2>&1 || true
 fi
 
-# Self-test
-wget -qO- http://localhost:$NGINX_PORT/nginx-health 2>&1 && echo "[WRAPPER] NGINX OK" || echo "[WRAPPER] NGINX DEAD"
+# Check using node (installed), not wget
+echo "[WRAPPER] Port check via node:"
+node -e "
+const net = require('net');
+const c = net.createConnection({host:'127.0.0.1', port: $NGINX_PORT}, () => {
+  console.log('[WRAPPER] TCP CONNECT OK on port $NGINX_PORT');
+  c.write('GET /nginx-health HTTP/1.0\r\nHost: localhost\r\n\r\n');
+});
+c.on('data', d => { console.log('[WRAPPER] RESPONSE:', d.toString().split('\r\n')[0]); c.end(); });
+c.on('error', e => console.log('[WRAPPER] TCP ERROR:', e.message));
+setTimeout(() => process.exit(0), 3000);
+" 2>&1
 
 unset PORT
 cd /app
