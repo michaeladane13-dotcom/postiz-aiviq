@@ -1,38 +1,30 @@
 #!/bin/sh
 set -e
 
-echo "[WRAPPER] Starting. PORT=$PORT"
+DEPLOY_ID="$(date +%s)"
+echo "=== DEPLOY $DEPLOY_ID START === PORT=$PORT"
+
 NGINX_PORT=${PORT:-8080}
 
 sed -i "s/listen 8080/listen $NGINX_PORT/" /etc/nginx/http.d/postiz.conf
 
-echo "[WRAPPER] nginx.conf user line:"
-grep -E "^user" /etc/nginx/nginx.conf || echo "(no user line)"
-
-echo "[WRAPPER] nginx.conf worker_processes line:"
-grep -E "worker_processes" /etc/nginx/nginx.conf || echo "(none)"
+echo "=== $DEPLOY_ID NGINX.CONF ==="
+cat /etc/nginx/nginx.conf
+echo "=== $DEPLOY_ID NGINX.CONF END ==="
 
 nginx -t 2>&1
-
-nginx -g "daemon off;" 2>/tmp/nginx.err &
+nginx -g "daemon off;" 2>&1 &
 NGINX_PID=$!
 sleep 3
 
-echo "[WRAPPER] nginx alive: $(kill -0 $NGINX_PID 2>&1 && echo YES || echo NO)"
-echo "[WRAPPER] nginx stderr:"
-cat /tmp/nginx.err 2>/dev/null || true
-echo "[WRAPPER] nginx error log:"
-cat /var/log/nginx/error.log 2>/dev/null | head -20 || true
+echo "=== $DEPLOY_ID NGINX alive=$(kill -0 $NGINX_PID 2>&1 && echo YES || echo NO) ==="
 
-echo "[WRAPPER] All TCP listeners (/proc/net/tcp):"
-awk 'NR>1 && $4=="0A" {printf "port %d\n", strtonum("0x"substr($2,10,4))}' /proc/net/tcp 2>/dev/null || echo "(no /proc/net/tcp)"
-
-# Check if 8080 is free or taken
 node -e "
 const net = require('net');
 const s = net.createServer();
-s.listen($NGINX_PORT, '0.0.0.0', () => { console.log('[WRAPPER] port $NGINX_PORT IS FREE (nginx NOT bound)'); s.close(); });
-s.on('error', e => { console.log('[WRAPPER] port $NGINX_PORT IN USE (nginx IS bound):', e.code); });
+s.listen($NGINX_PORT, '0.0.0.0', () => { console.log('=== $DEPLOY_ID port $NGINX_PORT IS FREE (nginx NOT bound) ==='); s.close(); });
+s.on('error', e => { console.log('=== $DEPLOY_ID port $NGINX_PORT IN USE (nginx IS bound) ==='); });
+setTimeout(() => process.exit(0), 2000);
 " || true
 
 unset PORT
