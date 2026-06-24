@@ -9,7 +9,7 @@ sed -i "s/listen 8080/listen $NGINX_PORT/" /etc/nginx/nginx.conf
 
 nginx -t 2>&1
 nginx -g "daemon off;" 2>&1 &
-sleep 1
+sleep 3
 
 unset PORT
 cd /app
