@@ -1,0 +1,8 @@
+[Unit]
+Description=Postiz safe upload cleanup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/postiz/smart_cleanup.sh
