@@ -1,0 +1,14 @@
+[Unit]
+Description=Guarded Postiz start
+Requires=docker.service postiz-clock-sanity.service
+After=docker.service postiz-clock-sanity.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/postiz/postiz_host_preflight.sh
+ExecStart=/usr/bin/docker start postiz-postiz-1
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
