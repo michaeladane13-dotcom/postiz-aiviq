@@ -25,6 +25,7 @@ RUN set -eux; \
 RUN apk add --no-cache nginx && \
     mkdir -p /run/nginx /var/lib/nginx/tmp/client_body /var/lib/nginx/tmp/proxy
 COPY nginx.conf /etc/nginx/nginx.conf
+COPY legal /srv/brand-scheduler
 COPY wrapper.sh /wrapper.sh
 RUN chmod +x /wrapper.sh
 EXPOSE 8080
