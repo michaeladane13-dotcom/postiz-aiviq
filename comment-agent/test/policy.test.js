@@ -4,6 +4,7 @@ import {
   ACCOUNT_ROUTES,
   buildReplyPrompt,
   classifyComment,
+  metaSubscriptionTarget,
   routeIntegration,
 } from '../src/policy.js';
 
@@ -39,6 +40,11 @@ test('ordinary comments become shadow-mode draft candidates', () => {
     action: 'draft_reply',
     reason: 'ordinary_comment',
   });
+});
+
+test('uses Meta subscription targets required by each login flow', () => {
+  assert.equal(metaSubscriptionTarget('instagram', '17841400000000000'), 'me');
+  assert.equal(metaSubscriptionTarget('facebook', '123/456'), '123%2F456');
 });
 
 test('every approved integration has one immutable persona and platform', () => {

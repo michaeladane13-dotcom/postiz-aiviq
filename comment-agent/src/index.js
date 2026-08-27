@@ -6,11 +6,12 @@ import {
   PERSONAS,
   buildReplyPrompt,
   classifyComment,
+  metaSubscriptionTarget,
   routeIntegration,
 } from './policy.js';
 
 const PORT = Number(process.env.PORT || 3000);
-const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v25.0';
+const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v26.0';
 const DATABASE_URL = process.env.DATABASE_URL;
 const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
 const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
@@ -217,8 +218,16 @@ async function syncSubscriptions() {
     let status = 'subscribed';
     let error = null;
     try {
+      // Facebook Login supplies a Page access token for Instagram integrations.
+      // Meta requires /me/subscribed_apps for that flow: /me resolves to the
+      // linked Facebook Page, while Instagram webhook payloads still carry the
+      // Instagram professional account ID used by accountsByMetaId.
+      const subscriptionTarget = metaSubscriptionTarget(
+        account.platform,
+        account.metaAccountId
+      );
       await graphRequest(
-        `${encodeURIComponent(account.metaAccountId)}/subscribed_apps?subscribed_fields=${encodeURIComponent(fields.join(','))}`,
+        `${subscriptionTarget}/subscribed_apps?subscribed_fields=${encodeURIComponent(fields.join(','))}`,
         account.accessToken,
         { method: 'POST' }
       );

@@ -70,6 +70,10 @@ export function routeIntegration(integrationId) {
   return ACCOUNT_ROUTES[integrationId] || null;
 }
 
+export function metaSubscriptionTarget(platform, metaAccountId) {
+  return platform === 'instagram' ? 'me' : encodeURIComponent(String(metaAccountId));
+}
+
 export const PERSONAS = Object.freeze({
   chaya: Object.freeze({
     displayName: 'Chaya',
