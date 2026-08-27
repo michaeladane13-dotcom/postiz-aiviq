@@ -6,6 +6,7 @@ import {
   PERSONAS,
   buildReplyPrompt,
   classifyComment,
+  metaSubscriptionHost,
   metaSubscriptionTarget,
   routeIntegration,
 } from './policy.js';
@@ -192,8 +193,8 @@ function extractEvents(payload) {
   return events.filter((event) => event.commentId && event.metaAccountId);
 }
 
-async function graphRequest(path, accessToken, options = {}) {
-  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${path}`);
+async function graphRequest(path, accessToken, options = {}, host = 'graph.facebook.com') {
+  const url = new URL(`https://${host}/${GRAPH_VERSION}/${path}`);
   url.searchParams.set('access_token', accessToken);
   const response = await fetch(url, options);
   const bodyText = await response.text();
@@ -229,7 +230,8 @@ async function syncSubscriptions() {
       await graphRequest(
         `${subscriptionTarget}/subscribed_apps?subscribed_fields=${encodeURIComponent(fields.join(','))}`,
         account.accessToken,
-        { method: 'POST' }
+        { method: 'POST' },
+        metaSubscriptionHost(account.platform)
       );
       summary.subscribed += 1;
     } catch (subscriptionError) {
