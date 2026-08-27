@@ -639,7 +639,13 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
 
-setInterval(() => loadAccounts().catch((error) => console.error('account_reload_failed', error.message)), 10 * 60 * 1000).unref();
-setInterval(() => syncSubscriptions().catch((error) => console.error('subscription_sync_failed', error.message)), 10 * 60 * 1000).unref();
+setInterval(async () => {
+  try {
+    await loadAccounts();
+    await syncSubscriptions();
+  } catch (error) {
+    console.error('account_sync_failed', error.message);
+  }
+}, 60 * 1000).unref();
 
 export { extractEvents };
