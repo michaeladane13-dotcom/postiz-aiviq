@@ -569,6 +569,22 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, { accounts: rows });
   }
 
+  if (request.method === 'POST' && url.pathname === '/admin/meta-refresh-required') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    const integrationIds = Object.keys(ACCOUNT_ROUTES);
+    const { rows } = await pool.query(
+      `UPDATE "Integration"
+          SET "refreshNeeded" = true
+        WHERE id = ANY($1::text[]) AND disabled = false
+        RETURNING id`,
+      [integrationIds]
+    );
+    return sendJson(response, 200, {
+      marked: rows.length,
+      expected: integrationIds.length,
+    });
+  }
+
   if (request.method === 'GET' && url.pathname === '/admin/contacts') {
     if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
     const { rows } = await pool.query(
