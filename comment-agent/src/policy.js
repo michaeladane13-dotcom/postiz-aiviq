@@ -71,11 +71,11 @@ export function routeIntegration(integrationId) {
 }
 
 export function metaSubscriptionTarget(platform, metaAccountId) {
-  return platform === 'instagram' ? 'me' : encodeURIComponent(String(metaAccountId));
+  return encodeURIComponent(String(metaAccountId));
 }
 
 export function metaSubscriptionHost(platform) {
-  return platform === 'instagram' ? 'graph.instagram.com' : 'graph.facebook.com';
+  return 'graph.facebook.com';
 }
 
 export const PERSONAS = Object.freeze({

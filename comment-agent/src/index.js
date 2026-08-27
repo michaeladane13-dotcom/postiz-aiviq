@@ -219,10 +219,9 @@ async function syncSubscriptions() {
     let status = 'subscribed';
     let error = null;
     try {
-      // Facebook Login supplies a Page access token for Instagram integrations.
-      // Meta requires /me/subscribed_apps for that flow: /me resolves to the
-      // linked Facebook Page, while Instagram webhook payloads still carry the
-      // Instagram professional account ID used by accountsByMetaId.
+      // Postiz uses Facebook Login for Instagram and stores a Facebook Page
+      // access token. Install the app on the linked Instagram professional
+      // account ID through graph.facebook.com; pages_manage_metadata is required.
       const subscriptionTarget = metaSubscriptionTarget(
         account.platform,
         account.metaAccountId
