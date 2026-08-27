@@ -12,6 +12,8 @@ Chaya, Ren and David Facebook/Instagram integrations.
 - Replies are drafts only; this service has no endpoint that publishes a reply.
 - Relationship memory is isolated by integration ID and exact Meta user ID. A regular
   or friend-like voice is used only for a confirmed contact on that persona's account.
+- Each approved Facebook Page and Instagram professional account is installed on the
+  app automatically and retried every ten minutes if Meta reports a missing permission.
 - All received decisions and moderation results are logged in Postgres.
 
 ## Required environment

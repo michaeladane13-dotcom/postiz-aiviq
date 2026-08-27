@@ -33,6 +33,7 @@ const pool = new Pool({
 });
 
 let accountsByMetaId = new Map();
+let subscriptionSummary = { subscribed: 0, failed: 0, pending: 0 };
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ''));
@@ -89,6 +90,16 @@ async function migrate() {
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY ("integrationId", "metaUserId")
+    );
+    CREATE TABLE IF NOT EXISTS "MetaAccountSubscription" (
+      "integrationId" TEXT PRIMARY KEY,
+      "metaAccountId" TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      persona TEXT NOT NULL,
+      fields TEXT[] NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT,
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE "CommentAgentEvent" ADD COLUMN IF NOT EXISTS "senderId" TEXT;
     CREATE INDEX IF NOT EXISTS "CommentAgentEvent_createdAt_idx"
@@ -197,6 +208,48 @@ async function graphRequest(path, accessToken, options = {}) {
     throw error;
   }
   return body;
+}
+
+async function syncSubscriptions() {
+  const summary = { subscribed: 0, failed: 0, pending: accountsByMetaId.size };
+  for (const account of accountsByMetaId.values()) {
+    const fields = account.platform === 'facebook' ? ['feed'] : ['comments'];
+    let status = 'subscribed';
+    let error = null;
+    try {
+      await graphRequest(
+        `${encodeURIComponent(account.metaAccountId)}/subscribed_apps?subscribed_fields=${encodeURIComponent(fields.join(','))}`,
+        account.accessToken,
+        { method: 'POST' }
+      );
+      summary.subscribed += 1;
+    } catch (subscriptionError) {
+      status = 'failed';
+      error = String(subscriptionError.message).slice(0, 1000);
+      summary.failed += 1;
+    }
+    summary.pending -= 1;
+    await pool.query(
+      `INSERT INTO "MetaAccountSubscription"
+        ("integrationId", "metaAccountId", platform, persona, fields, status, error)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT ("integrationId") DO UPDATE
+         SET "metaAccountId"=EXCLUDED."metaAccountId", platform=EXCLUDED.platform,
+             persona=EXCLUDED.persona, fields=EXCLUDED.fields, status=EXCLUDED.status,
+             error=EXCLUDED.error, "updatedAt"=NOW()`,
+      [
+        account.integrationId,
+        account.metaAccountId,
+        account.platform,
+        account.persona,
+        fields,
+        status,
+        error,
+      ]
+    );
+  }
+  subscriptionSummary = summary;
+  console.log(`subscription_sync subscribed=${summary.subscribed} failed=${summary.failed}`);
 }
 
 async function deleteOrHide(event, account) {
@@ -431,6 +484,7 @@ const server = http.createServer(async (request, response) => {
       accountsLoaded: accountsByMetaId.size,
       personaDrafting: Boolean(OPENAI_API_KEY),
       mode: 'shadow',
+      subscriptions: subscriptionSummary,
     });
     return;
   }
@@ -485,6 +539,16 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, { events: rows });
   }
 
+  if (request.method === 'GET' && url.pathname === '/admin/meta-status') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    const { rows } = await pool.query(
+      `SELECT "integrationId", "metaAccountId", platform, persona, fields, status,
+              error, "updatedAt"
+         FROM "MetaAccountSubscription" ORDER BY persona, platform`
+    );
+    return sendJson(response, 200, { accounts: rows });
+  }
+
   if (request.method === 'GET' && url.pathname === '/admin/contacts') {
     if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
     const { rows } = await pool.query(
@@ -534,10 +598,12 @@ const server = http.createServer(async (request, response) => {
 
 await migrate();
 await loadAccounts();
+await syncSubscriptions();
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
 
 setInterval(() => loadAccounts().catch((error) => console.error('account_reload_failed', error.message)), 10 * 60 * 1000).unref();
+setInterval(() => syncSubscriptions().catch((error) => console.error('subscription_sync_failed', error.message)), 10 * 60 * 1000).unref();
 
 export { extractEvents };
