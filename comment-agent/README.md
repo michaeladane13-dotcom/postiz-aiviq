@@ -10,6 +10,8 @@ Chaya, Ren and David Facebook/Instagram integrations.
   the agent attempts to hide the comment and records the deletion error.
 - Questions and ambiguous mentions of AI are held for review.
 - Replies are drafts only; this service has no endpoint that publishes a reply.
+- Relationship memory is isolated by integration ID and exact Meta user ID. A regular
+  or friend-like voice is used only for a confirmed contact on that persona's account.
 - All received decisions and moderation results are logged in Postgres.
 
 ## Required environment
@@ -23,3 +25,7 @@ Chaya, Ren and David Facebook/Instagram integrations.
 - `OPENAI_MODEL` (optional; defaults to `gpt-5-mini`)
 
 The Meta callback URL is `https://<service-domain>/webhooks/meta`.
+
+Confirmed relationship profiles can be listed or updated through the protected
+`/admin/contacts` endpoint. The server always derives the persona from the fixed
+integration route; callers cannot assign a contact to a different persona.

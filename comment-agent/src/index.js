@@ -55,6 +55,7 @@ async function migrate() {
       "metaAccountId" TEXT NOT NULL,
       "persona" TEXT NOT NULL,
       "username" TEXT,
+      "senderId" TEXT,
       "commentText" TEXT NOT NULL,
       "postId" TEXT,
       "action" TEXT NOT NULL,
@@ -77,8 +78,23 @@ async function migrate() {
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS "PersonaContactProfile" (
+      "integrationId" TEXT NOT NULL,
+      "metaUserId" TEXT NOT NULL,
+      "persona" TEXT NOT NULL,
+      "username" TEXT,
+      "relationship" TEXT NOT NULL DEFAULT 'new_follower',
+      "notes" TEXT,
+      "confirmed" BOOLEAN NOT NULL DEFAULT FALSE,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY ("integrationId", "metaUserId")
+    );
+    ALTER TABLE "CommentAgentEvent" ADD COLUMN IF NOT EXISTS "senderId" TEXT;
     CREATE INDEX IF NOT EXISTS "CommentAgentEvent_createdAt_idx"
       ON "CommentAgentEvent" ("createdAt" DESC);
+    CREATE INDEX IF NOT EXISTS "CommentAgentEvent_sender_idx"
+      ON "CommentAgentEvent" ("integrationId", "senderId", "createdAt" DESC);
   `);
 }
 
@@ -251,9 +267,9 @@ async function generateDraft(input) {
 async function saveEvent(event, account, decision) {
   const result = await pool.query(
     `INSERT INTO "CommentAgentEvent"
-      ("commentId", platform, "integrationId", "metaAccountId", persona, username,
+      ("commentId", platform, "integrationId", "metaAccountId", persona, username, "senderId",
        "commentText", "postId", action, reason, status, "rawEvent")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'received',$11)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'received',$12)
      ON CONFLICT ("commentId") DO NOTHING
      RETURNING "commentId"`,
     [
@@ -263,6 +279,7 @@ async function saveEvent(event, account, decision) {
       event.metaAccountId,
       account.persona,
       event.username || null,
+      event.senderId || null,
       event.text,
       event.postId || null,
       decision.action,
@@ -271,6 +288,46 @@ async function saveEvent(event, account, decision) {
     ]
   );
   return result.rowCount === 1;
+}
+
+async function loadRelationship(event, account) {
+  if (!event.senderId) {
+    return { relationship: 'new_follower', notes: '', recentHistory: [] };
+  }
+
+  await pool.query(
+    `INSERT INTO "PersonaContactProfile"
+      ("integrationId", "metaUserId", persona, username)
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT ("integrationId", "metaUserId") DO UPDATE
+       SET username=EXCLUDED.username, "updatedAt"=NOW()`,
+    [account.integrationId, event.senderId, account.persona, event.username || null]
+  );
+
+  const profileResult = await pool.query(
+    `SELECT relationship, notes, confirmed
+       FROM "PersonaContactProfile"
+      WHERE "integrationId"=$1 AND "metaUserId"=$2`,
+    [account.integrationId, event.senderId]
+  );
+  const profile = profileResult.rows[0];
+
+  const historyResult = await pool.query(
+    `SELECT "commentText", status, "createdAt"
+       FROM "CommentAgentEvent"
+      WHERE "integrationId"=$1 AND "senderId"=$2 AND "commentId"<>$3
+      ORDER BY "createdAt" DESC LIMIT 6`,
+    [account.integrationId, event.senderId, event.commentId]
+  );
+
+  return {
+    relationship: profile?.confirmed ? profile.relationship : 'new_follower',
+    notes: profile?.confirmed ? profile.notes || '' : '',
+    recentHistory: historyResult.rows.reverse().map((row) => ({
+      comment: row.commentText,
+      outcome: row.status,
+    })),
+  };
 }
 
 async function updateEvent(commentId, status, error = null) {
@@ -299,11 +356,15 @@ async function processEvent(event) {
   if (decision.action === 'draft_reply') {
     try {
       const postText = await fetchPostContext(event, account);
+      const relationship = await loadRelationship(event, account);
       const generated = await generateDraft({
         persona: account.persona,
         comment: event.text,
         postText,
         username: event.username,
+        relationship: relationship.relationship,
+        relationshipNotes: relationship.notes,
+        recentHistory: relationship.recentHistory,
       });
       await pool.query(
         `INSERT INTO "PersonaReplyDraft"
@@ -422,6 +483,50 @@ const server = http.createServer(async (request, response) => {
          FROM "CommentAgentEvent" ORDER BY "createdAt" DESC LIMIT 200`
     );
     return sendJson(response, 200, { events: rows });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/admin/contacts') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    const { rows } = await pool.query(
+      `SELECT "integrationId", "metaUserId", persona, username, relationship, notes,
+              confirmed, "createdAt", "updatedAt"
+         FROM "PersonaContactProfile" ORDER BY "updatedAt" DESC LIMIT 500`
+    );
+    return sendJson(response, 200, { contacts: rows });
+  }
+
+  if (request.method === 'PUT' && url.pathname === '/admin/contacts') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    try {
+      const body = JSON.parse((await readBody(request)).toString('utf8'));
+      const route = routeIntegration(String(body.integrationId || ''));
+      const allowedRelationships = new Set(['new_follower', 'regular', 'friend_regular']);
+      if (!route || !body.metaUserId || !allowedRelationships.has(body.relationship)) {
+        return sendJson(response, 400, { error: 'Invalid contact profile' });
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO "PersonaContactProfile"
+          ("integrationId", "metaUserId", persona, username, relationship, notes, confirmed)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT ("integrationId", "metaUserId") DO UPDATE
+           SET persona=EXCLUDED.persona, username=COALESCE(EXCLUDED.username, "PersonaContactProfile".username),
+               relationship=EXCLUDED.relationship, notes=EXCLUDED.notes,
+               confirmed=EXCLUDED.confirmed, "updatedAt"=NOW()
+         RETURNING "integrationId", "metaUserId", persona, username, relationship, notes, confirmed`,
+        [
+          body.integrationId,
+          String(body.metaUserId),
+          route.persona,
+          body.username ? String(body.username).slice(0, 200) : null,
+          body.relationship,
+          body.notes ? String(body.notes).slice(0, 1000) : null,
+          body.confirmed === true,
+        ]
+      );
+      return sendJson(response, 200, { contact: rows[0] });
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message });
+    }
   }
 
   sendJson(response, 404, { error: 'Not found' });

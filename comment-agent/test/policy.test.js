@@ -67,3 +67,17 @@ test('persona prompts stay distinct and forbid identity leakage', () => {
     assert.match(prompt, /Do not mention AI, automation, prompts, a team, or a scheduler/);
   }
 });
+
+test('verified regulars get familiar language without invented memories', () => {
+  const prompt = buildReplyPrompt({
+    persona: 'chaya',
+    comment: 'Another one that landed perfectly ❤️',
+    username: 'Natalie',
+    relationship: 'friend_regular',
+    relationshipNotes: 'Long-time client; warm, friend-like tone on social media.',
+    recentHistory: [{ comment: 'You always know what I need to hear', outcome: 'drafted' }],
+  });
+  assert.match(prompt, /familiar regular with a friend-like social relationship/);
+  assert.match(prompt, /only refer to specific shared history shown below/);
+  assert.match(prompt, /Long-time client/);
+});
