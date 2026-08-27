@@ -33,7 +33,7 @@ const pool = new Pool({
 });
 
 let accountsByMetaId = new Map();
-let subscriptionSummary = { subscribed: 0, failed: 0, pending: 0 };
+let subscriptionSummary = { subscribed: 0, failed: 0, pending: 0, reasons: {} };
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ''));
@@ -211,7 +211,7 @@ async function graphRequest(path, accessToken, options = {}) {
 }
 
 async function syncSubscriptions() {
-  const summary = { subscribed: 0, failed: 0, pending: accountsByMetaId.size };
+  const summary = { subscribed: 0, failed: 0, pending: accountsByMetaId.size, reasons: {} };
   for (const account of accountsByMetaId.values()) {
     const fields = account.platform === 'facebook' ? ['feed'] : ['comments'];
     let status = 'subscribed';
@@ -227,6 +227,15 @@ async function syncSubscriptions() {
       status = 'failed';
       error = String(subscriptionError.message).slice(0, 1000);
       summary.failed += 1;
+      const category = /pages_manage_metadata/i.test(error)
+        ? 'missing_pages_manage_metadata'
+        : /permission/i.test(error)
+          ? `permission_error_${subscriptionError.code || 'unknown'}`
+          : /unsupported|does not exist|cannot be loaded/i.test(error)
+            ? `unsupported_endpoint_${subscriptionError.code || 'unknown'}`
+            : `meta_error_${subscriptionError.code || 'unknown'}`;
+      const reasonKey = `${account.platform}:${category}`;
+      summary.reasons[reasonKey] = (summary.reasons[reasonKey] || 0) + 1;
     }
     summary.pending -= 1;
     await pool.query(
