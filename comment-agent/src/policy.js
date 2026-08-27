@@ -58,6 +58,89 @@ export function classifyComment(text) {
   return { action: 'draft_reply', reason: 'ordinary_comment' };
 }
 
+const SAFE_POSITIVE_COMMENT =
+  /\b(?:beautiful|love\s+this|loved\s+this|needed\s+this|thank\s+you|thanks|so\s+true|exactly|resonat(?:ed|es)|amazing|powerful|helpful|inspiring|spot\s+on|this\s+landed|wonderful|perfect|great)\b/i;
+const SAFE_POSITIVE_EMOJI_ONLY = /^[\s❤💜💕💖💗💞✨🙏🥰😍🙌🌙🫶👏]+$/u;
+const UNSAFE_TEMPLATE_SIGNAL =
+  /\b(?:but|however|not|never|no|wrong|fake|scam|hate|disagree|problem|issue|refund|money|price|cost|health|doctor|medical|legal|lawyer|suicid|die|death|pregnan|future|when|where|why|how|who|what|can|could|would|should|will|please\s+tell|reading|book|appointment)\b/i;
+
+const CURATED_REPLIES = Object.freeze({
+  chaya: Object.freeze({
+    new_follower: Object.freeze([
+      'Thank you, lovely 💜 I’m glad this found you.',
+      'I’m so glad this landed for you 💜',
+      'Beautiful — thank you for being here 💜',
+    ]),
+    regular: Object.freeze([
+      'So lovely to see you here again 💜 I’m glad this one landed.',
+      'Thank you, lovely 💜 I’m so glad this resonated again.',
+    ]),
+    friend_regular: Object.freeze([
+      'Ah, lovely to see you here 💜 I’m glad this one landed.',
+      'Always lovely seeing you here 💜 I’m so glad this resonated.',
+    ]),
+  }),
+  ren: Object.freeze({
+    new_follower: Object.freeze([
+      'Thank you — I’m glad this resonated with you.',
+      'That means a lot. I’m so glad it landed.',
+      'Thank you for sharing that — I’m glad you’re here.',
+    ]),
+    regular: Object.freeze([
+      'Lovely to see you here again — I’m glad this resonated.',
+      'Thank you for coming back to share that. I’m glad it landed.',
+    ]),
+    friend_regular: Object.freeze([
+      'Always lovely to see you here — I’m glad this one resonated.',
+      'So good to see you here again. I’m glad this landed.',
+    ]),
+  }),
+  david: Object.freeze({
+    new_follower: Object.freeze([
+      'Thank you. I’m glad this resonated with you.',
+      'I appreciate that — I’m glad it found you.',
+      'Thank you for being here. I’m glad it helped.',
+    ]),
+    regular: Object.freeze([
+      'Good to see you here again. I’m glad this resonated.',
+      'Thank you for returning and sharing that. I’m glad it helped.',
+    ]),
+    friend_regular: Object.freeze([
+      'Always good to see you here. I’m glad this one resonated.',
+      'Good to hear from you again. I’m glad this landed.',
+    ]),
+  }),
+});
+
+function stableReplyIndex(value, size) {
+  let hash = 0;
+  for (const character of String(value || '')) {
+    hash = (hash * 31 + character.codePointAt(0)) >>> 0;
+  }
+  return size ? hash % size : 0;
+}
+
+export function buildSafeTemplateReply({
+  persona,
+  comment,
+  senderId = '',
+  relationship = 'new_follower',
+}) {
+  const normalized = normalizeComment(comment);
+  if (!CURATED_REPLIES[persona] || !normalized || normalized.length > 180) return null;
+  if (normalized.includes('?') || /https?:\/\/|www\./i.test(normalized)) return null;
+  if (UNSAFE_TEMPLATE_SIGNAL.test(normalized)) return null;
+  if (!SAFE_POSITIVE_COMMENT.test(normalized) && !SAFE_POSITIVE_EMOJI_ONLY.test(normalized)) {
+    return null;
+  }
+
+  const relationshipKey = ['regular', 'friend_regular'].includes(relationship)
+    ? relationship
+    : 'new_follower';
+  const replies = CURATED_REPLIES[persona][relationshipKey];
+  return replies[stableReplyIndex(`${senderId}:${normalized}`, replies.length)];
+}
+
 export const ACCOUNT_ROUTES = Object.freeze({
   cmt0ql9300001msb2pvozfwe9: Object.freeze({ persona: 'chaya', platform: 'instagram' }),
   cmt1vavvs0007myc1cbsep0dd: Object.freeze({ persona: 'chaya', platform: 'facebook' }),

@@ -9,9 +9,12 @@ Chaya, Ren and David Facebook/Instagram integrations.
 - Explicit AI-accusation comments are deleted immediately. If Meta rejects deletion,
   the agent attempts to hide the comment and records the deletion error.
 - Questions and ambiguous mentions of AI are held for review.
-- Replies are drafts only; this service has no endpoint that publishes a reply.
-- Relationship memory is isolated by integration ID and exact Meta user ID. A regular
-  or friend-like voice is used only for a confirmed contact on that persona's account.
+- In `limited_live` mode, only unmistakably positive, low-risk comments receive
+  a short curated persona reply. Questions, complaints, links, sensitive topics
+  and ambiguous comments remain drafts or review items.
+- Relationship memory is isolated by integration ID and exact Meta user ID. Three
+  clearly positive interactions can establish a returning regular; friend-like voice
+  is used only for a manually confirmed contact on that persona's account.
 - Each approved Facebook Page and Instagram professional account is installed on the
   app automatically and retried every ten minutes if Meta reports a missing permission.
 - All received decisions and moderation results are logged in Postgres.
@@ -25,6 +28,7 @@ Chaya, Ren and David Facebook/Instagram integrations.
 - `META_GRAPH_VERSION` (optional; defaults to `v25.0`)
 - `OPENAI_API_KEY` (optional; without it, moderation runs but drafts are marked blocked)
 - `OPENAI_MODEL` (optional; defaults to `gpt-5-mini`)
+- `REPLY_MODE` (optional; `shadow` by default, or `limited_live` for curated replies)
 
 The Meta callback URL is `https://<service-domain>/webhooks/meta`.
 

@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   ACCOUNT_ROUTES,
   buildReplyPrompt,
+  buildSafeTemplateReply,
   classifyComment,
   metaSubscriptionHost,
   metaSubscriptionTarget,
@@ -92,4 +93,44 @@ test('verified regulars get familiar language without invented memories', () => 
   assert.match(prompt, /familiar regular with a friend-like social relationship/);
   assert.match(prompt, /only refer to specific shared history shown below/);
   assert.match(prompt, /Long-time client/);
+});
+
+test('curated replies stay persona-specific for unmistakably positive comments', () => {
+  const replies = ['chaya', 'ren', 'david'].map((persona) =>
+    buildSafeTemplateReply({
+      persona,
+      comment: 'I really needed this today 💜',
+      senderId: '12345',
+    })
+  );
+  assert.equal(replies.every(Boolean), true);
+  assert.equal(new Set(replies).size, 3);
+  assert.match(replies[0], /💜/);
+});
+
+test('curated replies refuse questions, complaints and sensitive requests', () => {
+  for (const comment of [
+    'Beautiful, but this is wrong',
+    'Can you tell me when I will meet someone?',
+    'I need a medical reading please',
+    'Why is the price so high?',
+    'Visit https://example.com — amazing',
+  ]) {
+    assert.equal(
+      buildSafeTemplateReply({ persona: 'chaya', comment, senderId: '12345' }),
+      null,
+      comment
+    );
+  }
+});
+
+test('confirmed relationship tiers use familiar but bounded templates', () => {
+  const regular = buildSafeTemplateReply({
+    persona: 'chaya',
+    comment: 'Beautiful 💜',
+    senderId: 'natalie-meta-id',
+    relationship: 'friend_regular',
+  });
+  assert.match(regular, /lovely|Always/);
+  assert.doesNotMatch(regular, /remember|client|reading/);
 });

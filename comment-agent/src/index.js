@@ -5,6 +5,7 @@ import {
   ACCOUNT_ROUTES,
   PERSONAS,
   buildReplyPrompt,
+  buildSafeTemplateReply,
   classifyComment,
   metaSubscriptionHost,
   metaSubscriptionTarget,
@@ -19,6 +20,7 @@ const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
 const ADMIN_TOKEN = process.env.COMMENT_AGENT_ADMIN_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+const REPLY_MODE = process.env.REPLY_MODE || 'shadow';
 
 for (const [name, value] of Object.entries({
   DATABASE_URL,
@@ -336,6 +338,36 @@ async function generateDraft(input) {
   return { draft: draft.slice(0, 1000), model: OPENAI_MODEL, error: null };
 }
 
+async function publishReply(event, account, message) {
+  const path = account.platform === 'instagram'
+    ? `${encodeURIComponent(event.commentId)}/replies`
+    : `${encodeURIComponent(event.commentId)}/comments`;
+  const body = new URLSearchParams({ message });
+  return graphRequest(path, account.accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+}
+
+async function saveDraft({ event, account, draft, status, model, error = null }) {
+  await pool.query(
+    `INSERT INTO "PersonaReplyDraft"
+      (id, "commentId", "integrationId", persona, draft, status, model, error)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [
+      crypto.randomUUID(),
+      event.commentId,
+      account.integrationId,
+      account.persona,
+      draft,
+      status,
+      model,
+      error,
+    ]
+  );
+}
+
 async function saveEvent(event, account, decision) {
   const result = await pool.query(
     `INSERT INTO "CommentAgentEvent"
@@ -391,9 +423,20 @@ async function loadRelationship(event, account) {
       ORDER BY "createdAt" DESC LIMIT 6`,
     [account.integrationId, event.senderId, event.commentId]
   );
+  const positiveHistoryCount = historyResult.rows.filter((row) =>
+    buildSafeTemplateReply({
+      persona: account.persona,
+      comment: row.commentText,
+      relationship: 'new_follower',
+    })
+  ).length;
 
   return {
-    relationship: profile?.confirmed ? profile.relationship : 'new_follower',
+    relationship: profile?.confirmed
+      ? profile.relationship
+      : positiveHistoryCount >= 3
+        ? 'regular'
+        : 'new_follower',
     notes: profile?.confirmed ? profile.notes || '' : '',
     recentHistory: historyResult.rows.reverse().map((row) => ({
       comment: row.commentText,
@@ -429,6 +472,50 @@ async function processEvent(event) {
     try {
       const postText = await fetchPostContext(event, account);
       const relationship = await loadRelationship(event, account);
+      const safeTemplate = buildSafeTemplateReply({
+        persona: account.persona,
+        comment: event.text,
+        senderId: event.senderId,
+        relationship: relationship.relationship,
+      });
+
+      if (safeTemplate) {
+        if (REPLY_MODE === 'limited_live') {
+          try {
+            await publishReply(event, account, safeTemplate);
+            await saveDraft({
+              event,
+              account,
+              draft: safeTemplate,
+              status: 'published_template',
+              model: 'curated-template-v1',
+            });
+            await updateEvent(event.commentId, 'replied_template');
+          } catch (error) {
+            const message = String(error.message).slice(0, 1000);
+            await saveDraft({
+              event,
+              account,
+              draft: safeTemplate,
+              status: 'publish_failed',
+              model: 'curated-template-v1',
+              error: message,
+            });
+            await updateEvent(event.commentId, 'reply_failed', message);
+          }
+        } else {
+          await saveDraft({
+            event,
+            account,
+            draft: safeTemplate,
+            status: 'pending_template',
+            model: 'curated-template-v1',
+          });
+          await updateEvent(event.commentId, 'drafted_template');
+        }
+        return;
+      }
+
       const generated = await generateDraft({
         persona: account.persona,
         comment: event.text,
@@ -438,21 +525,14 @@ async function processEvent(event) {
         relationshipNotes: relationship.notes,
         recentHistory: relationship.recentHistory,
       });
-      await pool.query(
-        `INSERT INTO "PersonaReplyDraft"
-          (id, "commentId", "integrationId", persona, draft, status, model, error)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [
-          crypto.randomUUID(),
-          event.commentId,
-          account.integrationId,
-          account.persona,
-          generated.draft,
-          generated.draft ? 'pending' : 'generation_blocked',
-          generated.model,
-          generated.error,
-        ]
-      );
+      await saveDraft({
+        event,
+        account,
+        draft: generated.draft,
+        status: generated.draft ? 'pending' : 'generation_blocked',
+        model: generated.model,
+        error: generated.error,
+      });
       await updateEvent(
         event.commentId,
         generated.draft ? 'drafted' : 'generation_blocked',
@@ -502,7 +582,8 @@ const server = http.createServer(async (request, response) => {
       ok: true,
       accountsLoaded: accountsByMetaId.size,
       personaDrafting: Boolean(OPENAI_API_KEY),
-      mode: 'shadow',
+      mode: REPLY_MODE,
+      limitedPersonaReplies: REPLY_MODE === 'limited_live',
       subscriptions: subscriptionSummary,
     });
     return;
