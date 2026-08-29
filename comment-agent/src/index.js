@@ -41,6 +41,12 @@ const pool = new Pool({
 
 let accountsByMetaId = new Map();
 let subscriptionSummary = { subscribed: 0, failed: 0, pending: 0, reasons: {} };
+let tiktokSchedulerSummary = {
+  configured: Boolean(BUFFER_API_KEY),
+  validated: false,
+  connectedChannels: 0,
+  error: BUFFER_API_KEY ? null : 'BUFFER_API_KEY is not configured',
+};
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ''));
@@ -274,6 +280,26 @@ async function syncSubscriptions() {
   }
   subscriptionSummary = summary;
   console.log(`subscription_sync subscribed=${summary.subscribed} failed=${summary.failed}`);
+}
+
+async function syncTikTokScheduler() {
+  if (!BUFFER_API_KEY) return;
+  try {
+    const channels = await bufferApi.connectedTikTokChannels();
+    tiktokSchedulerSummary = {
+      configured: true,
+      validated: channels.length === 3,
+      connectedChannels: channels.length,
+      error: channels.length === 3 ? null : `Expected 3 approved TikTok channels, found ${channels.length}`,
+    };
+  } catch (error) {
+    tiktokSchedulerSummary = {
+      configured: true,
+      validated: false,
+      connectedChannels: 0,
+      error: String(error.message).slice(0, 500),
+    };
+  }
 }
 
 async function deleteOrHide(event, account) {
@@ -587,7 +613,7 @@ const server = http.createServer(async (request, response) => {
       personaDrafting: Boolean(OPENAI_API_KEY),
       mode: REPLY_MODE,
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
-      tiktokScheduler: Boolean(BUFFER_API_KEY),
+      tiktokScheduler: tiktokSchedulerSummary,
       subscriptions: subscriptionSummary,
     });
     return;
@@ -740,6 +766,7 @@ const server = http.createServer(async (request, response) => {
 await migrate();
 await loadAccounts();
 await syncSubscriptions();
+await syncTikTokScheduler();
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
@@ -752,5 +779,9 @@ setInterval(async () => {
     console.error('account_sync_failed', error.message);
   }
 }, 60 * 1000).unref();
+
+setInterval(() => {
+  syncTikTokScheduler().catch((error) => console.error('tiktok_sync_failed', error.message));
+}, 5 * 60 * 1000).unref();
 
 export { extractEvents };

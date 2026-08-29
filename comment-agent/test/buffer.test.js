@@ -43,3 +43,24 @@ test('creates an automatic custom-scheduled video post', async () => {
   assert.equal(request.variables.input.schedulingType, 'automatic');
   assert.equal(request.variables.input.assets[0].video.url, 'https://media.example/ren.mp4');
 });
+
+test('validates the three approved Buffer TikTok channels', async () => {
+  let call = 0;
+  const api = new BufferApi('secret', async () => {
+    call += 1;
+    return {
+      ok: true,
+      async json() {
+        if (call === 1) return { data: { account: { organizations: [{ id: 'org-1' }] } } };
+        return { data: { channels: [
+          { id: TIKTOK_CHANNELS.chaya, name: 'chayamedium', service: 'tiktok' },
+          { id: TIKTOK_CHANNELS.iris, name: 'iris09852', service: 'tiktok' },
+          { id: TIKTOK_CHANNELS.ren, name: 'renlevymclarnon', service: 'tiktok' },
+          { id: 'ig-1', name: 'chaya', service: 'instagram' },
+        ] } };
+      },
+    };
+  });
+  const channels = await api.connectedTikTokChannels();
+  assert.deepEqual(channels.map((channel) => channel.id), Object.values(TIKTOK_CHANNELS));
+});

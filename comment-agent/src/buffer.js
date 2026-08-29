@@ -94,6 +94,28 @@ export class BufferApi {
     return result.post;
   }
 
+  async connectedTikTokChannels() {
+    const accountData = await this.graphql(`
+      query BufferOrganizations { account { organizations { id } } }
+    `);
+    const organizations = accountData.account?.organizations || [];
+    const channels = [];
+    for (const organization of organizations) {
+      const data = await this.graphql(`
+        query BufferChannels($organizationId: OrganizationId!) {
+          channels(input: { organizationId: $organizationId }) {
+            id name displayName service
+          }
+        }
+      `, { organizationId: organization.id });
+      channels.push(...(data.channels || []));
+    }
+    const approvedIds = new Set(Object.values(TIKTOK_CHANNELS));
+    return channels.filter((channel) =>
+      channel.service === 'tiktok' && approvedIds.has(channel.id)
+    );
+  }
+
   async post(postId) {
     const encodedId = JSON.stringify(String(postId || ''));
     const data = await this.graphql(`
