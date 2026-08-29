@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
 import { Pool } from 'pg';
+import { BufferApi } from './buffer.js';
 import {
   ACCOUNT_ROUTES,
   PERSONAS,
@@ -21,6 +22,8 @@ const ADMIN_TOKEN = process.env.COMMENT_AGENT_ADMIN_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const REPLY_MODE = process.env.REPLY_MODE || 'shadow';
+const BUFFER_API_KEY = process.env.BUFFER_API_KEY || '';
+const bufferApi = new BufferApi(BUFFER_API_KEY);
 
 for (const [name, value] of Object.entries({
   DATABASE_URL,
@@ -584,6 +587,7 @@ const server = http.createServer(async (request, response) => {
       personaDrafting: Boolean(OPENAI_API_KEY),
       mode: REPLY_MODE,
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
+      tiktokScheduler: Boolean(BUFFER_API_KEY),
       subscriptions: subscriptionSummary,
     });
     return;
@@ -647,6 +651,27 @@ const server = http.createServer(async (request, response) => {
          FROM "MetaAccountSubscription" ORDER BY persona, platform`
     );
     return sendJson(response, 200, { accounts: rows });
+  }
+
+  if (request.method === 'POST' && url.pathname === '/admin/tiktok/schedule') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    try {
+      const body = JSON.parse((await readBody(request)).toString('utf8'));
+      const post = await bufferApi.scheduleTikTok(body);
+      return sendJson(response, 201, { post });
+    } catch (error) {
+      return sendJson(response, 400, { error: String(error.message).slice(0, 1000) });
+    }
+  }
+
+  if (request.method === 'GET' && url.pathname === '/admin/tiktok/status') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    try {
+      const post = await bufferApi.post(url.searchParams.get('id'));
+      return sendJson(response, 200, { post });
+    } catch (error) {
+      return sendJson(response, 400, { error: String(error.message).slice(0, 1000) });
+    }
   }
 
   if (request.method === 'POST' && url.pathname === '/admin/meta-refresh-required') {
