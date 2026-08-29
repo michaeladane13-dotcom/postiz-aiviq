@@ -50,7 +50,7 @@ test('uses Meta subscription targets required by each login flow', () => {
     '17841400000000000'
   );
   assert.equal(metaSubscriptionTarget('facebook', '123/456'), '123%2F456');
-  assert.equal(metaSubscriptionHost('instagram'), 'graph.facebook.com');
+  assert.equal(metaSubscriptionHost('instagram'), 'graph.instagram.com');
   assert.equal(metaSubscriptionHost('facebook'), 'graph.facebook.com');
 });
 
@@ -69,6 +69,21 @@ test('every approved integration has one immutable persona and platform', () => 
     platform: 'facebook',
   });
   assert.equal(routeIntegration('unknown'), null);
+});
+
+test('live routing is limited to Chaya, Ren and Facebook-only David', () => {
+  const platformsByPersona = Object.values(ACCOUNT_ROUTES).reduce((result, route) => {
+    result[route.persona] ||= [];
+    result[route.persona].push(route.platform);
+    return result;
+  }, {});
+
+  for (const platforms of Object.values(platformsByPersona)) platforms.sort();
+  assert.deepEqual(platformsByPersona, {
+    chaya: ['facebook', 'instagram'],
+    ren: ['facebook', 'instagram'],
+    david: ['facebook'],
+  });
 });
 
 test('persona prompts stay distinct and forbid identity leakage', () => {

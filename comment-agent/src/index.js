@@ -243,9 +243,9 @@ async function syncSubscriptions() {
     let status = 'subscribed';
     let error = null;
     try {
-      // Postiz uses Facebook Login for Instagram and stores a Facebook Page
-      // access token. Install the app on the linked Instagram professional
-      // account ID through graph.facebook.com; pages_manage_metadata is required.
+      // Install the app on the linked Instagram professional account ID through
+      // Instagram's Graph host. Facebook Page subscriptions continue to use
+      // graph.facebook.com.
       const subscriptionTarget = metaSubscriptionTarget(
         account.platform,
         account.metaAccountId
