@@ -243,9 +243,9 @@ async function syncSubscriptions() {
     let status = 'subscribed';
     let error = null;
     try {
-      // Install the app on the linked Instagram professional account ID through
-      // Instagram's Graph host. Facebook Page subscriptions continue to use
-      // graph.facebook.com.
+      // Postiz's Instagram integration uses Facebook Login and stores a Page
+      // access token, so both Page and Instagram subscriptions use the Facebook
+      // Graph host. Instagram is still targeted by its professional account ID.
       const subscriptionTarget = metaSubscriptionTarget(
         account.platform,
         account.metaAccountId
@@ -261,7 +261,9 @@ async function syncSubscriptions() {
       status = 'failed';
       error = String(subscriptionError.message).slice(0, 1000);
       summary.failed += 1;
-      const category = /pages_manage_metadata/i.test(error)
+      const category = account.platform === 'instagram' && subscriptionError.code === 3
+        ? 'reconnect_required_for_comment_scope'
+        : /pages_manage_metadata/i.test(error)
         ? 'missing_pages_manage_metadata'
         : /permission/i.test(error)
           ? `permission_error_${subscriptionError.code || 'unknown'}`

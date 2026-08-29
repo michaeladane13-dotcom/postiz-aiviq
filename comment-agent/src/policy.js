@@ -158,7 +158,7 @@ export function metaSubscriptionTarget(platform, metaAccountId) {
 }
 
 export function metaSubscriptionHost(platform) {
-  return platform === 'instagram' ? 'graph.instagram.com' : 'graph.facebook.com';
+  return 'graph.facebook.com';
 }
 
 export const PERSONAS = Object.freeze({

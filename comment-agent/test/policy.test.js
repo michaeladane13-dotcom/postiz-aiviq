@@ -50,7 +50,7 @@ test('uses Meta subscription targets required by each login flow', () => {
     '17841400000000000'
   );
   assert.equal(metaSubscriptionTarget('facebook', '123/456'), '123%2F456');
-  assert.equal(metaSubscriptionHost('instagram'), 'graph.instagram.com');
+  assert.equal(metaSubscriptionHost('instagram'), 'graph.facebook.com');
   assert.equal(metaSubscriptionHost('facebook'), 'graph.facebook.com');
 });
 
