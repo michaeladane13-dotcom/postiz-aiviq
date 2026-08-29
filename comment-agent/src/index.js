@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { Pool } from 'pg';
 import { BufferApi } from './buffer.js';
+import { GitHubClientDirectory } from './client-directory.js';
 import {
   ACCOUNT_ROUTES,
   PERSONAS,
@@ -24,6 +25,18 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const REPLY_MODE = process.env.REPLY_MODE || 'shadow';
 const BUFFER_API_KEY = process.env.BUFFER_API_KEY || '';
 const bufferApi = new BufferApi(BUFFER_API_KEY);
+const CLIENT_HANDOVER_REPO = process.env.CLIENT_HANDOVER_REPO ||
+  'michaeladane13-dotcom/chaya-client-handover';
+const CLIENT_HANDOVER_PATH = process.env.CLIENT_HANDOVER_PATH || 'social-public-profiles.json';
+const CLIENT_HANDOVER_REF = process.env.CLIENT_HANDOVER_REF || 'main';
+const CLIENT_HANDOVER_GITHUB_TOKEN = process.env.CLIENT_HANDOVER_GITHUB_TOKEN || '';
+const CLIENT_HANDOVER_SYNC_MS = 8 * 60 * 60 * 1000;
+const clientDirectory = new GitHubClientDirectory({
+  repository: CLIENT_HANDOVER_REPO,
+  path: CLIENT_HANDOVER_PATH,
+  ref: CLIENT_HANDOVER_REF,
+  token: CLIENT_HANDOVER_GITHUB_TOKEN,
+});
 
 for (const [name, value] of Object.entries({
   DATABASE_URL,
@@ -424,8 +437,14 @@ async function saveEvent(event, account, decision) {
 }
 
 async function loadRelationship(event, account) {
+  const directoryProfile = clientDirectory.match(event.username);
   if (!event.senderId) {
-    return { relationship: 'new_follower', notes: '', recentHistory: [] };
+    return {
+      relationship: directoryProfile?.relationship || 'new_follower',
+      engagement: directoryProfile?.engagement || 'reply',
+      notes: '',
+      recentHistory: [],
+    };
   }
 
   await pool.query(
@@ -463,9 +482,12 @@ async function loadRelationship(event, account) {
   return {
     relationship: profile?.confirmed
       ? profile.relationship
-      : positiveHistoryCount >= 3
-        ? 'regular'
-        : 'new_follower',
+      : directoryProfile?.relationship
+        ? directoryProfile.relationship
+        : positiveHistoryCount >= 3
+          ? 'regular'
+          : 'new_follower',
+    engagement: directoryProfile?.engagement || 'reply',
     notes: profile?.confirmed ? profile.notes || '' : '',
     recentHistory: historyResult.rows.reverse().map((row) => ({
       comment: row.commentText,
@@ -501,6 +523,14 @@ async function processEvent(event) {
     try {
       const postText = await fetchPostContext(event, account);
       const relationship = await loadRelationship(event, account);
+      if (relationship.engagement === 'do_not_engage') {
+        await updateEvent(event.commentId, 'ignored_client_rule');
+        return;
+      }
+      if (relationship.engagement === 'manual_review') {
+        await updateEvent(event.commentId, 'needs_review_client_rule');
+        return;
+      }
       const safeTemplate = buildSafeTemplateReply({
         persona: account.persona,
         comment: event.text,
@@ -613,6 +643,7 @@ const server = http.createServer(async (request, response) => {
       personaDrafting: Boolean(OPENAI_API_KEY),
       mode: REPLY_MODE,
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
+      clientDirectory: clientDirectory.status(),
       tiktokScheduler: tiktokSchedulerSummary,
       subscriptions: subscriptionSummary,
     });
@@ -767,6 +798,9 @@ await migrate();
 await loadAccounts();
 await syncSubscriptions();
 await syncTikTokScheduler();
+await clientDirectory.sync().catch((error) => {
+  console.error('client_directory_sync_failed', error.message);
+});
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
@@ -783,5 +817,9 @@ setInterval(async () => {
 setInterval(() => {
   syncTikTokScheduler().catch((error) => console.error('tiktok_sync_failed', error.message));
 }, 5 * 60 * 1000).unref();
+
+setInterval(() => {
+  clientDirectory.sync().catch((error) => console.error('client_directory_sync_failed', error.message));
+}, CLIENT_HANDOVER_SYNC_MS).unref();
 
 export { extractEvents };
