@@ -98,7 +98,10 @@ export class BufferApi {
     const encodedId = JSON.stringify(String(postId || ''));
     const data = await this.graphql(`
       query TikTokPostStatus {
-        post(input: { id: ${encodedId} }) { id text status dueAt channelId }
+        post(input: { id: ${encodedId} }) {
+          id text status dueAt channelId sentAt externalLink updatedAt
+          error { message supportUrl }
+        }
       }
     `);
     if (!data.post?.id) throw new Error('Buffer post was not found');
