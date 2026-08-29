@@ -5,8 +5,7 @@ import {
   buildReplyPrompt,
   buildSafeTemplateReply,
   classifyComment,
-  metaSubscriptionHost,
-  metaSubscriptionTarget,
+  metaSubscriptionStrategy,
   routeIntegration,
 } from '../src/policy.js';
 
@@ -44,14 +43,21 @@ test('ordinary comments become shadow-mode draft candidates', () => {
   });
 });
 
-test('uses Meta subscription targets required by each login flow', () => {
-  assert.equal(
-    metaSubscriptionTarget('instagram', '17841400000000000'),
-    '17841400000000000'
+test('uses app-level Instagram webhooks and account-level Facebook subscriptions', () => {
+  assert.deepEqual(metaSubscriptionStrategy('instagram', '17841400000000000'), {
+    mode: 'app_level',
+    fields: ['comments'],
+  });
+  assert.deepEqual(metaSubscriptionStrategy('facebook', '123/456'), {
+    mode: 'account_level',
+    fields: ['feed'],
+    host: 'graph.facebook.com',
+    target: '123%2F456',
+  });
+  assert.throws(
+    () => metaSubscriptionStrategy('tiktok', 'not-meta'),
+    /Unsupported Meta subscription platform/
   );
-  assert.equal(metaSubscriptionTarget('facebook', '123/456'), '123%2F456');
-  assert.equal(metaSubscriptionHost('instagram'), 'graph.facebook.com');
-  assert.equal(metaSubscriptionHost('facebook'), 'graph.facebook.com');
 });
 
 test('every approved integration has one immutable persona and platform', () => {

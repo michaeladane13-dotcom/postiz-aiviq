@@ -9,8 +9,7 @@ import {
   buildReplyPrompt,
   buildSafeTemplateReply,
   classifyComment,
-  metaSubscriptionHost,
-  metaSubscriptionTarget,
+  metaSubscriptionStrategy,
   routeIntegration,
 } from './policy.js';
 
@@ -53,7 +52,13 @@ const pool = new Pool({
 });
 
 let accountsByMetaId = new Map();
-let subscriptionSummary = { subscribed: 0, failed: 0, pending: 0, reasons: {} };
+let subscriptionSummary = {
+  subscribed: 0,
+  failed: 0,
+  pending: 0,
+  appLevelConfigured: 0,
+  reasons: {},
+};
 let tiktokSchedulerSummary = {
   configured: Boolean(BUFFER_API_KEY),
   validated: false,
@@ -237,33 +242,38 @@ async function graphRequest(path, accessToken, options = {}, host = 'graph.faceb
 }
 
 async function syncSubscriptions() {
-  const summary = { subscribed: 0, failed: 0, pending: accountsByMetaId.size, reasons: {} };
+  const summary = {
+    subscribed: 0,
+    failed: 0,
+    pending: accountsByMetaId.size,
+    appLevelConfigured: 0,
+    reasons: {},
+  };
   for (const account of accountsByMetaId.values()) {
-    const fields = account.platform === 'facebook' ? ['feed'] : ['comments'];
-    let status = 'subscribed';
+    const strategy = metaSubscriptionStrategy(account.platform, account.metaAccountId);
+    const fields = strategy.fields;
+    let status = strategy.mode === 'app_level' ? 'configured_app_webhook' : 'subscribed';
     let error = null;
     try {
-      // Postiz's Instagram integration uses Facebook Login and stores a Page
-      // access token, so both Page and Instagram subscriptions use the Facebook
-      // Graph host. Instagram is still targeted by its professional account ID.
-      const subscriptionTarget = metaSubscriptionTarget(
-        account.platform,
-        account.metaAccountId
-      );
-      await graphRequest(
-        `${subscriptionTarget}/subscribed_apps?subscribed_fields=${encodeURIComponent(fields.join(','))}`,
-        account.accessToken,
-        { method: 'POST' },
-        metaSubscriptionHost(account.platform)
-      );
+      // Instagram with Facebook Login is configured once on the app's
+      // Instagram webhook object. Per-account /subscribed_apps is the
+      // Instagram Login flow and returns Meta error 3 for Page tokens.
+      if (strategy.mode === 'app_level') {
+        summary.appLevelConfigured += 1;
+      } else {
+        await graphRequest(
+          `${strategy.target}/subscribed_apps?subscribed_fields=${encodeURIComponent(fields.join(','))}`,
+          account.accessToken,
+          { method: 'POST' },
+          strategy.host
+        );
+      }
       summary.subscribed += 1;
     } catch (subscriptionError) {
       status = 'failed';
       error = String(subscriptionError.message).slice(0, 1000);
       summary.failed += 1;
-      const category = account.platform === 'instagram' && subscriptionError.code === 3
-        ? 'reconnect_required_for_comment_scope'
-        : /pages_manage_metadata/i.test(error)
+      const category = /pages_manage_metadata/i.test(error)
         ? 'missing_pages_manage_metadata'
         : /permission/i.test(error)
           ? `permission_error_${subscriptionError.code || 'unknown'}`

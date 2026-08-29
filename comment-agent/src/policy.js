@@ -153,12 +153,22 @@ export function routeIntegration(integrationId) {
   return ACCOUNT_ROUTES[integrationId] || null;
 }
 
-export function metaSubscriptionTarget(platform, metaAccountId) {
-  return encodeURIComponent(String(metaAccountId));
-}
-
-export function metaSubscriptionHost(platform) {
-  return 'graph.facebook.com';
+export function metaSubscriptionStrategy(platform, metaAccountId) {
+  if (platform === 'instagram') {
+    return Object.freeze({
+      mode: 'app_level',
+      fields: Object.freeze(['comments']),
+    });
+  }
+  if (platform === 'facebook') {
+    return Object.freeze({
+      mode: 'account_level',
+      fields: Object.freeze(['feed']),
+      host: 'graph.facebook.com',
+      target: encodeURIComponent(String(metaAccountId)),
+    });
+  }
+  throw new Error(`Unsupported Meta subscription platform: ${platform}`);
 }
 
 export const PERSONAS = Object.freeze({
