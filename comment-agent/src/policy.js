@@ -1,15 +1,5 @@
-const QUESTION_PREFIX = /^(?:is|was|are|were|do|does|did|can|could|would|will|why|how|what|who|when|where)\b/i;
-
-const EXPLICIT_AI_ACCUSATIONS = [
-  /\bthis\s+(?:is|looks)\s+(?:like\s+)?ai\b/i,
-  /\b(?:obviously|clearly|definitely|totally|just)\s+ai\b/i,
-  /\bfake\s+ai\b/i,
-  /\bai\s+(?:generated|made|created|fake|garbage|trash|slop)\b/i,
-  /\b(?:generated|made|created)\s+(?:with|by|using)\s+ai\b/i,
-  /\blooks?\s+(?:like\s+)?ai\b/i,
-  /\banother\s+ai\s+(?:account|video|page|post)\b/i,
-  /\bai\s+(?:account|video|page|post)\b/i,
-];
+const AI_REFERENCE =
+  /(?:\bartificial[\s._-]+intelligence\b|\bopen[\s._-]*ai\b|\bchat[\s._-]*gpt\b|\bgpt(?:[\s._-]*\d+(?:\.\d+)?)?\b|\bmidjourney\b|\bdall[\s._-]*e\b|\bstable[\s._-]+diffusion\b|\bdeepfake\b|(?:^|[^\p{L}\p{N}_])a[\s.\-_/]*i(?=$|[^\p{L}\p{N}_])|🤖)/iu;
 
 export function normalizeComment(text) {
   return String(text || '')
@@ -21,39 +11,9 @@ export function normalizeComment(text) {
 
 export function classifyComment(text) {
   const normalized = normalizeComment(text);
-  const lower = normalized.toLowerCase();
 
-  if (!lower) return { action: 'ignore', reason: 'empty' };
-  if (/\b(?:not|isn't|isnt|doesn't|doesnt)\s+ai\b/i.test(lower)) {
-    return { action: 'review', reason: 'ai_negation' };
-  }
-  if (
-    /\b(?:don't|dont|do not)\s+(?:think|believe).*\bai\b/i.test(lower) ||
-    /\b(?:doesn't|doesnt|does not)\s+look\s+like\s+ai\b/i.test(lower)
-  ) {
-    return { action: 'review', reason: 'ai_negation' };
-  }
-
-  const looksLikeQuestion =
-    normalized.includes('?') ||
-    QUESTION_PREFIX.test(lower) ||
-    /\b(?:do you use|are you using|wonder(?:ing)? if)\b/i.test(lower);
-
-  if (looksLikeQuestion && /\bai\b/i.test(lower)) {
-    return { action: 'review', reason: 'ai_question' };
-  }
-
-  if (/^(?:ai|a\.i\.)[.!…]*$/i.test(lower)) {
-    return { action: 'delete', reason: 'standalone_ai_accusation' };
-  }
-
-  if (EXPLICIT_AI_ACCUSATIONS.some((pattern) => pattern.test(lower))) {
-    return { action: 'delete', reason: 'explicit_ai_accusation' };
-  }
-
-  if (/\bai\b/i.test(lower)) {
-    return { action: 'review', reason: 'ambiguous_ai_reference' };
-  }
+  if (!normalized) return { action: 'ignore', reason: 'empty' };
+  if (AI_REFERENCE.test(normalized)) return { action: 'delete', reason: 'ai_reference' };
 
   return { action: 'draft_reply', reason: 'ordinary_comment' };
 }

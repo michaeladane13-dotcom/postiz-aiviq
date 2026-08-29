@@ -655,6 +655,7 @@ const server = http.createServer(async (request, response) => {
       personaDrafting: Boolean(OPENAI_API_KEY),
       mode: REPLY_MODE,
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
+      commentPolicy: { aiReferences: 'delete_no_reply' },
       clientDirectory: clientDirectory.status(),
       tiktokScheduler: tiktokSchedulerSummary,
       subscriptions: subscriptionSummary,

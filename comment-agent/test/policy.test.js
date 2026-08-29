@@ -9,28 +9,46 @@ import {
   routeIntegration,
 } from '../src/policy.js';
 
-test('deletes explicit AI accusations', () => {
+test('deletes every genuine AI reference without review or reply', () => {
   for (const text of [
     'AI',
     'This is AI',
-    'obviously ai!',
-    'AI generated garbage',
-    'made using AI',
-    'Looks like AI to me',
-    'another AI account',
-  ]) {
-    assert.equal(classifyComment(text).action, 'delete', text);
-  }
-});
-
-test('does not delete questions or benign AI references', () => {
-  for (const text of [
     'Is this AI?',
     'Do you use AI for the background?',
     'This is not AI',
     "I don't think this is AI",
     "That doesn't look like AI",
     'I love learning about AI and intuition',
+    'obviously ai!',
+    'AI generated garbage',
+    'made using AI',
+    'Looks like AI to me',
+    'another AI account',
+    'A.I.',
+    'A I generated',
+    'A-I slop',
+    'Artificial intelligence made this',
+    'OpenAI made this',
+    'ChatGPT wrote this',
+    'Looks GPT-5 generated',
+    'This is Midjourney',
+    'Made with DALL-E',
+    'Stable Diffusion again',
+    'This is a deepfake',
+    '🤖',
+  ]) {
+    assert.deepEqual(classifyComment(text), { action: 'delete', reason: 'ai_reference' }, text);
+  }
+});
+
+test('does not mistake AI letters inside ordinary words for an AI reference', () => {
+  for (const text of [
+    'She said this beautifully',
+    'Watching this again',
+    'Still waiting for part two',
+    'Kai always explains this well',
+    'Aisha sent me here',
+    'Rainn, this was lovely',
   ]) {
     assert.notEqual(classifyComment(text).action, 'delete', text);
   }
