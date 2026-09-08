@@ -7,6 +7,7 @@ import {
   classifyComment,
   metaSubscriptionStrategy,
   routeIntegration,
+  sanitizeReplyText,
 } from '../src/policy.js';
 
 test('deletes every genuine AI reference without review or reply', () => {
@@ -172,4 +173,20 @@ test('confirmed relationship tiers use familiar but bounded templates', () => {
   });
   assert.match(regular, /lovely|Always/);
   assert.doesNotMatch(regular, /remember|client|reading/);
+});
+
+test('all reply text is forced to remain free of em dashes', () => {
+  assert.equal(sanitizeReplyText('Warm — natural – concise'), 'Warm, natural, concise');
+
+  for (const persona of ['chaya', 'ren', 'david']) {
+    for (const relationship of ['new_follower', 'regular', 'friend_regular']) {
+      const reply = buildSafeTemplateReply({
+        persona,
+        comment: 'Beautiful, thank you 💜',
+        senderId: `${persona}:${relationship}`,
+        relationship,
+      });
+      assert.doesNotMatch(reply, /\u2014/);
+    }
+  }
 });

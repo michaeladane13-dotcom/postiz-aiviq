@@ -11,6 +11,7 @@ import {
   classifyComment,
   metaSubscriptionStrategy,
   routeIntegration,
+  sanitizeReplyText,
 } from './policy.js';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -64,6 +65,12 @@ let tiktokSchedulerSummary = {
   validated: false,
   connectedChannels: 0,
   error: BUFFER_API_KEY ? null : 'BUFFER_API_KEY is not configured',
+};
+let databaseSummary = {
+  ready: false,
+  lastCheckedAt: null,
+  lastSuccessfulAt: null,
+  error: 'Database initialization is pending',
 };
 
 function safeEqual(left, right) {
@@ -173,6 +180,29 @@ async function loadAccounts() {
   const missing = integrationIds.filter((id) => !rows.some((row) => row.id === id));
   if (missing.length) throw new Error(`Missing approved integrations: ${missing.join(', ')}`);
   accountsByMetaId = loaded;
+}
+
+async function refreshMetaAccountState() {
+  try {
+    await migrate();
+    await loadAccounts();
+    await syncSubscriptions();
+    const completedAt = new Date().toISOString();
+    databaseSummary = {
+      ready: true,
+      lastCheckedAt: completedAt,
+      lastSuccessfulAt: completedAt,
+      error: null,
+    };
+  } catch (error) {
+    databaseSummary = {
+      ...databaseSummary,
+      ready: false,
+      lastCheckedAt: new Date().toISOString(),
+      error: String(error.message).slice(0, 1000),
+    };
+    throw error;
+  }
 }
 
 function extractEvents(payload) {
@@ -389,14 +419,14 @@ async function generateDraft(input) {
     .join('')
     .trim();
   if (!draft) throw new Error('OpenAI returned an empty draft');
-  return { draft: draft.slice(0, 1000), model: OPENAI_MODEL, error: null };
+  return { draft: sanitizeReplyText(draft).slice(0, 1000), model: OPENAI_MODEL, error: null };
 }
 
 async function publishReply(event, account, message) {
   const path = account.platform === 'instagram'
     ? `${encodeURIComponent(event.commentId)}/replies`
     : `${encodeURIComponent(event.commentId)}/comments`;
-  const body = new URLSearchParams({ message });
+  const body = new URLSearchParams({ message: sanitizeReplyText(message) });
   return graphRequest(path, account.accessToken, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -649,9 +679,12 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
 
   if (request.method === 'GET' && url.pathname === '/health') {
-    sendJson(response, 200, {
-      ok: true,
+    const expectedAccounts = Object.keys(ACCOUNT_ROUTES).length;
+    const ok = databaseSummary.ready && accountsByMetaId.size === expectedAccounts;
+    sendJson(response, ok ? 200 : 503, {
+      ok,
       accountsLoaded: accountsByMetaId.size,
+      expectedAccounts,
       personaDrafting: Boolean(OPENAI_API_KEY),
       mode: REPLY_MODE,
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
@@ -659,6 +692,7 @@ const server = http.createServer(async (request, response) => {
       clientDirectory: clientDirectory.status(),
       tiktokScheduler: tiktokSchedulerSummary,
       subscriptions: subscriptionSummary,
+      database: databaseSummary,
     });
     return;
   }
@@ -807,9 +841,7 @@ const server = http.createServer(async (request, response) => {
   sendJson(response, 404, { error: 'Not found' });
 });
 
-await migrate();
-await loadAccounts();
-await syncSubscriptions();
+await refreshMetaAccountState();
 await syncTikTokScheduler();
 await clientDirectory.sync().catch((error) => {
   console.error('client_directory_sync_failed', error.message);
@@ -820,8 +852,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
 setInterval(async () => {
   try {
-    await loadAccounts();
-    await syncSubscriptions();
+    await refreshMetaAccountState();
   } catch (error) {
     console.error('account_sync_failed', error.message);
   }

@@ -9,6 +9,13 @@ export function normalizeComment(text) {
     .trim();
 }
 
+export function sanitizeReplyText(text) {
+  return String(text || '')
+    .replace(/\s*[\u2013\u2014]\s*/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function classifyComment(text) {
   const normalized = normalizeComment(text);
 
@@ -29,7 +36,7 @@ const CURATED_REPLIES = Object.freeze({
     new_follower: Object.freeze([
       'Thank you, lovely 💜 I’m glad this found you.',
       'I’m so glad this landed for you 💜',
-      'Beautiful — thank you for being here 💜',
+      'Beautiful, thank you for being here 💜',
     ]),
     regular: Object.freeze([
       'So lovely to see you here again 💜 I’m glad this one landed.',
@@ -42,23 +49,23 @@ const CURATED_REPLIES = Object.freeze({
   }),
   ren: Object.freeze({
     new_follower: Object.freeze([
-      'Thank you — I’m glad this resonated with you.',
+      'Thank you, I’m glad this resonated with you.',
       'That means a lot. I’m so glad it landed.',
-      'Thank you for sharing that — I’m glad you’re here.',
+      'Thank you for sharing that. I’m glad you’re here.',
     ]),
     regular: Object.freeze([
-      'Lovely to see you here again — I’m glad this resonated.',
+      'Lovely to see you here again. I’m glad this resonated.',
       'Thank you for coming back to share that. I’m glad it landed.',
     ]),
     friend_regular: Object.freeze([
-      'Always lovely to see you here — I’m glad this one resonated.',
+      'Always lovely to see you here. I’m glad this one resonated.',
       'So good to see you here again. I’m glad this landed.',
     ]),
   }),
   david: Object.freeze({
     new_follower: Object.freeze([
       'Thank you. I’m glad this resonated with you.',
-      'I appreciate that — I’m glad it found you.',
+      'I appreciate that. I’m glad it found you.',
       'Thank you for being here. I’m glad it helped.',
     ]),
     regular: Object.freeze([
@@ -98,7 +105,7 @@ export function buildSafeTemplateReply({
     ? relationship
     : 'new_follower';
   const replies = CURATED_REPLIES[persona][relationshipKey];
-  return replies[stableReplyIndex(`${senderId}:${normalized}`, replies.length)];
+  return sanitizeReplyText(replies[stableReplyIndex(`${senderId}:${normalized}`, replies.length)]);
 }
 
 export const ACCOUNT_ROUTES = Object.freeze({
@@ -135,17 +142,17 @@ export const PERSONAS = Object.freeze({
   chaya: Object.freeze({
     displayName: 'Chaya',
     voice:
-      'Warm, intuitive, lightly playful and spiritually grounded. Use clear everyday language, not grand declarations. Keep public replies to one or two short sentences. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Do not sign the reply.',
+      'Warm, intuitive, lightly playful and spiritually grounded. Use clear everyday language, not grand declarations. Keep public replies to one or two short sentences. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Never use em dashes. Do not sign the reply.',
   }),
   ren: Object.freeze({
     displayName: 'Ren',
     voice:
-      'Warm, creative, thoughtful and down-to-earth, with a gentle mystical edge. Keep public replies personal and concise, usually one sentence. Avoid copying Chaya’s phrasing or sounding like a generic spiritual account. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Do not sign the reply.',
+      'Warm, creative, thoughtful and down-to-earth, with a gentle mystical edge. Keep public replies personal and concise, usually one sentence. Avoid copying Chaya’s phrasing or sounding like a generic spiritual account. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Never use em dashes. Do not sign the reply.',
   }),
   david: Object.freeze({
     displayName: 'David',
     voice:
-      'Calm, kind, assured and reflective, with understated mystical language. Keep public replies brief and natural. Avoid Chaya’s playful phrasing and Ren’s art-focused phrasing. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Do not sign the reply.',
+      'Calm, kind, assured and reflective, with understated mystical language. Keep public replies brief and natural. Avoid Chaya’s playful phrasing and Ren’s art-focused phrasing. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Never use em dashes. Do not sign the reply.',
   }),
 });
 
