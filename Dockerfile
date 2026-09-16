@@ -51,16 +51,10 @@ RUN set -eux; \
 # Newer Postiz releases contain this same guard, but also require Temporal. Add
 # only the guard to the known-working runtime so the existing services suffice.
 RUN set -eux; \
-    files="$(find /app -type f \( -name '*.js' -o -name '*.ts' \) \
-      -exec grep -El 'await this\.storage\.uploadSimple\(picture\)' {} + 2>/dev/null)"; \
-    test -n "$files"; \
-    for file in $files; do \
-      sed -i \
-        's/await this\.storage\.uploadSimple(picture)/await this.storage.uploadSimple(picture).catch(() => undefined)/g' \
-        "$file"; \
-    done; \
-    test -z "$(find /app -type f \( -name '*.js' -o -name '*.ts' \) \
-      -exec grep -El 'await this\.storage\.uploadSimple\(picture\)([^.]|$)' {} + 2>/dev/null)"
+    find /app -type f \( -name '*.js' -o -name '*.ts' \) \
+      -exec sed -i \
+        's|this\.storage\.uploadSimple(picture)|this.storage.uploadSimple(picture).catch(() => undefined)|g' \
+        {} +
 
 RUN apk add --no-cache nginx && \
     mkdir -p /run/nginx /var/lib/nginx/tmp/client_body /var/lib/nginx/tmp/proxy
