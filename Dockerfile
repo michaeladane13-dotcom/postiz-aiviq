@@ -1,4 +1,4 @@
-FROM ghcr.io/gitroomhq/postiz-app:v2.11.3
+FROM ghcr.io/gitroomhq/postiz-app:v2.23.0
 USER root
 RUN set -eux; \
     files="$(find /app -type f \( \
