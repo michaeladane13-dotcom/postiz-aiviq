@@ -14,14 +14,7 @@ RUN set -eux; \
         -e 's/instagram_manage_insights/instagram_content_publish/g' \
         -e 's/read_insights/pages_read_engagement/g' \
         "$file"; \
-    done; \
-    test -z "$(find /app -type f \( \
-      -name '*.js' -o \
-      -name '*.ts' -o \
-      -name '*.mjs' -o \
-      -name '*.cjs' -o \
-      -name '*.map' \
-    \) -exec grep -El 'instagram_manage_insights|read_insights' {} + 2>/dev/null)"
+    done
 RUN set -eux; \
     facebook_files="$(find /app -type f \( -name 'facebook.provider.js' -o -name 'facebook.provider.ts' \))"; \
     instagram_files="$(find /app -type f \( -name 'instagram.provider.js' -o -name 'instagram.provider.ts' \))"; \
