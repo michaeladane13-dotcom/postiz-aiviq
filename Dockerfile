@@ -51,10 +51,17 @@ RUN set -eux; \
 # Newer Postiz releases contain this same guard, but also require Temporal. Add
 # only the guard to the known-working runtime so the existing services suffice.
 RUN set -eux; \
-    find /app -type f \( -name '*.js' -o -name '*.ts' \) \
-      -exec sed -i \
-        's|this\.storage\.uploadSimple(picture)|this.storage.uploadSimple(picture).catch(() => undefined)|g' \
-        {} +
+    worker_target='/app/apps/workers/dist/libraries/nestjs-libraries/src/database/prisma/integrations/integration.service.js'; \
+    backend_target='/app/apps/backend/dist/libraries/nestjs-libraries/src/database/prisma/integrations/integration.service.js'; \
+    test -f "$worker_target"; \
+    for target in "$worker_target" "$backend_target"; do \
+      if [ -f "$target" ] && ! grep -Fq 'uploadSimple(picture).catch' "$target"; then \
+        sed -i \
+          's|uploadSimple(picture)|uploadSimple(picture).catch(() => undefined)|g' \
+          "$target"; \
+      fi; \
+    done; \
+    grep -Fq 'uploadSimple(picture).catch' "$worker_target"
 
 RUN apk add --no-cache nginx && \
     mkdir -p /run/nginx /var/lib/nginx/tmp/client_body /var/lib/nginx/tmp/proxy
