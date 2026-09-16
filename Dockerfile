@@ -35,7 +35,13 @@ RUN set -eux; \
         "$file"; \
       grep -q 'pages_manage_metadata' "$file"; \
     done
-RUN apk add --no-cache nginx && \
+RUN if command -v apk >/dev/null 2>&1; then \
+      apk add --no-cache nginx; \
+    else \
+      apt-get update && \
+      apt-get install -y --no-install-recommends nginx && \
+      rm -rf /var/lib/apt/lists/*; \
+    fi && \
     mkdir -p /run/nginx /var/lib/nginx/tmp/client_body /var/lib/nginx/tmp/proxy
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY legal /srv/brand-scheduler
