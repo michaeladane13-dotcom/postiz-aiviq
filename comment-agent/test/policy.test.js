@@ -175,6 +175,17 @@ test('confirmed relationship tiers use familiar but bounded templates', () => {
   assert.doesNotMatch(regular, /remember|client|reading/);
 });
 
+test('brief neutral-positive reactions receive a safe persona reply', () => {
+  const reply = buildSafeTemplateReply({
+    persona: 'david',
+    comment: 'Interesting',
+    senderId: '28900221122917895',
+  });
+
+  assert.match(reply, /Thank you|I appreciate|glad/i);
+  assert.doesNotMatch(reply, /\u2014/);
+});
+
 test('lottery questions get a humorous refusal without promising numbers or a win', () => {
   const replies = ['chaya', 'ren', 'david'].map((persona) =>
     buildSafeTemplateReply({

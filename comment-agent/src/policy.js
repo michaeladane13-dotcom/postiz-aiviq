@@ -26,7 +26,7 @@ export function classifyComment(text) {
 }
 
 const SAFE_POSITIVE_COMMENT =
-  /\b(?:beautiful|love\s+this|loved\s+this|needed\s+this|thank\s+you|thanks|so\s+true|exactly|resonat(?:ed|es)|amazing|powerful|helpful|inspiring|spot\s+on|this\s+landed|wonderful|perfect|great)\b/i;
+  /\b(?:beautiful|love\s+this|loved\s+this|needed\s+this|thank\s+you|thanks|so\s+true|exactly|interesting|resonat(?:ed|es)|amazing|powerful|helpful|inspiring|spot\s+on|this\s+landed|wonderful|perfect|great)\b/i;
 const SAFE_POSITIVE_EMOJI_ONLY = /^[\s❤💜💕💖💗💞✨🙏🥰😍🙌🌙🫶👏]+$/u;
 const LOTTERY_REQUEST = /\b(?:lottery|lotto|jackpot|winning\s+numbers?)\b/i;
 const LOTTERY_SENSITIVE_CONTEXT =
