@@ -28,6 +28,9 @@ export function classifyComment(text) {
 const SAFE_POSITIVE_COMMENT =
   /\b(?:beautiful|love\s+this|loved\s+this|needed\s+this|thank\s+you|thanks|so\s+true|exactly|resonat(?:ed|es)|amazing|powerful|helpful|inspiring|spot\s+on|this\s+landed|wonderful|perfect|great)\b/i;
 const SAFE_POSITIVE_EMOJI_ONLY = /^[\s❤💜💕💖💗💞✨🙏🥰😍🙌🌙🫶👏]+$/u;
+const LOTTERY_REQUEST = /\b(?:lottery|lotto|jackpot|winning\s+numbers?)\b/i;
+const LOTTERY_SENSITIVE_CONTEXT =
+  /\b(?:death|died|suicid|doctor|medical|legal|lawyer|pregnan|refund|scam|hate)\b/i;
 const UNSAFE_TEMPLATE_SIGNAL =
   /\b(?:but|however|not|never|no|wrong|fake|scam|hate|disagree|problem|issue|refund|money|price|cost|health|doctor|medical|legal|lawyer|suicid|die|death|pregnan|future|when|where|why|how|who|what|can|could|would|should|will|please\s+tell|reading|book|appointment)\b/i;
 
@@ -79,6 +82,15 @@ const CURATED_REPLIES = Object.freeze({
   }),
 });
 
+const LOTTERY_REPLIES = Object.freeze({
+  chaya:
+    'Let’s see what comes up in the energy of your reading, lovely. We don’t give out lottery numbers though, because if we knew those, we’d be rich 😂💜',
+  ren:
+    'We can see what comes through in a reading, but we don’t give out lottery numbers. If we knew those, we’d be rich already 😂',
+  david:
+    'We can explore what comes through in a reading, but we don’t give out lottery numbers. If we knew those, we’d be rich too 😂',
+});
+
 function stableReplyIndex(value, size) {
   let hash = 0;
   for (const character of String(value || '')) {
@@ -95,7 +107,11 @@ export function buildSafeTemplateReply({
 }) {
   const normalized = normalizeComment(comment);
   if (!CURATED_REPLIES[persona] || !normalized || normalized.length > 180) return null;
-  if (normalized.includes('?') || /https?:\/\/|www\./i.test(normalized)) return null;
+  if (/https?:\/\/|www\./i.test(normalized)) return null;
+  if (LOTTERY_REQUEST.test(normalized) && !LOTTERY_SENSITIVE_CONTEXT.test(normalized)) {
+    return sanitizeReplyText(LOTTERY_REPLIES[persona]);
+  }
+  if (normalized.includes('?')) return null;
   if (UNSAFE_TEMPLATE_SIGNAL.test(normalized)) return null;
   if (!SAFE_POSITIVE_COMMENT.test(normalized) && !SAFE_POSITIVE_EMOJI_ONLY.test(normalized)) {
     return null;

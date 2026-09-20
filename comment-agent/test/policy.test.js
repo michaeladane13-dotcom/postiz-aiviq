@@ -175,6 +175,37 @@ test('confirmed relationship tiers use familiar but bounded templates', () => {
   assert.doesNotMatch(regular, /remember|client|reading/);
 });
 
+test('lottery questions get a humorous refusal without promising numbers or a win', () => {
+  const replies = ['chaya', 'ren', 'david'].map((persona) =>
+    buildSafeTemplateReply({
+      persona,
+      comment: 'Can I be told if I would win the lottery?!!! Please 🙏🏽',
+      senderId: 'lottery-question',
+    })
+  );
+
+  assert.equal(replies.every(Boolean), true);
+  assert.match(replies[0], /energy of your reading/i);
+  for (const reply of replies) {
+    assert.match(reply, /don’t give out lottery numbers/i);
+    assert.match(reply, /we’d be rich/i);
+    assert.doesNotMatch(reply, /\u2014/);
+  }
+});
+
+test('lottery humour stays blocked when the comment contains sensitive context or a link', () => {
+  for (const comment of [
+    'My daughter died, will I win the lottery?',
+    'Win the lottery at https://example.com',
+  ]) {
+    assert.equal(
+      buildSafeTemplateReply({ persona: 'chaya', comment, senderId: 'unsafe-lottery' }),
+      null,
+      comment
+    );
+  }
+});
+
 test('all reply text is forced to remain free of em dashes', () => {
   assert.equal(sanitizeReplyText('Warm — natural – concise'), 'Warm, natural, concise');
 
