@@ -87,7 +87,8 @@ export function verifyMetaSignature(rawBody, signatureHeader, appSecret = FACEBO
 
 async function migrate() {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS "CommentAgentEvent" (
+    CREATE SCHEMA IF NOT EXISTS comment_agent;
+    CREATE TABLE IF NOT EXISTS comment_agent."CommentAgentEvent" (
       "commentId" TEXT PRIMARY KEY,
       "platform" TEXT NOT NULL,
       "integrationId" TEXT NOT NULL,
@@ -105,9 +106,9 @@ async function migrate() {
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "processedAt" TIMESTAMPTZ
     );
-    CREATE TABLE IF NOT EXISTS "PersonaReplyDraft" (
+    CREATE TABLE IF NOT EXISTS comment_agent."PersonaReplyDraft" (
       "id" UUID PRIMARY KEY,
-      "commentId" TEXT NOT NULL UNIQUE REFERENCES "CommentAgentEvent"("commentId") ON DELETE CASCADE,
+      "commentId" TEXT NOT NULL UNIQUE REFERENCES comment_agent."CommentAgentEvent"("commentId") ON DELETE CASCADE,
       "integrationId" TEXT NOT NULL,
       "persona" TEXT NOT NULL,
       "draft" TEXT,
@@ -117,7 +118,7 @@ async function migrate() {
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE TABLE IF NOT EXISTS "PersonaContactProfile" (
+    CREATE TABLE IF NOT EXISTS comment_agent."PersonaContactProfile" (
       "integrationId" TEXT NOT NULL,
       "metaUserId" TEXT NOT NULL,
       "persona" TEXT NOT NULL,
@@ -129,7 +130,7 @@ async function migrate() {
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY ("integrationId", "metaUserId")
     );
-    CREATE TABLE IF NOT EXISTS "MetaAccountSubscription" (
+    CREATE TABLE IF NOT EXISTS comment_agent."MetaAccountSubscription" (
       "integrationId" TEXT PRIMARY KEY,
       "metaAccountId" TEXT NOT NULL,
       platform TEXT NOT NULL,
@@ -139,11 +140,11 @@ async function migrate() {
       error TEXT,
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    ALTER TABLE "CommentAgentEvent" ADD COLUMN IF NOT EXISTS "senderId" TEXT;
+    ALTER TABLE comment_agent."CommentAgentEvent" ADD COLUMN IF NOT EXISTS "senderId" TEXT;
     CREATE INDEX IF NOT EXISTS "CommentAgentEvent_createdAt_idx"
-      ON "CommentAgentEvent" ("createdAt" DESC);
+      ON comment_agent."CommentAgentEvent" ("createdAt" DESC);
     CREATE INDEX IF NOT EXISTS "CommentAgentEvent_sender_idx"
-      ON "CommentAgentEvent" ("integrationId", "senderId", "createdAt" DESC);
+      ON comment_agent."CommentAgentEvent" ("integrationId", "senderId", "createdAt" DESC);
   `);
 }
 
@@ -315,7 +316,7 @@ async function syncSubscriptions() {
     }
     summary.pending -= 1;
     await pool.query(
-      `INSERT INTO "MetaAccountSubscription"
+      `INSERT INTO comment_agent."MetaAccountSubscription"
         ("integrationId", "metaAccountId", platform, persona, fields, status, error)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT ("integrationId") DO UPDATE
@@ -436,7 +437,7 @@ async function publishReply(event, account, message) {
 
 async function saveDraft({ event, account, draft, status, model, error = null }) {
   await pool.query(
-    `INSERT INTO "PersonaReplyDraft"
+    `INSERT INTO comment_agent."PersonaReplyDraft"
       (id, "commentId", "integrationId", persona, draft, status, model, error)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
     [
@@ -454,7 +455,7 @@ async function saveDraft({ event, account, draft, status, model, error = null })
 
 async function saveEvent(event, account, decision) {
   const result = await pool.query(
-    `INSERT INTO "CommentAgentEvent"
+    `INSERT INTO comment_agent."CommentAgentEvent"
       ("commentId", platform, "integrationId", "metaAccountId", persona, username, "senderId",
        "commentText", "postId", action, reason, status, "rawEvent")
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'received',$12)
@@ -490,7 +491,7 @@ async function loadRelationship(event, account) {
   }
 
   await pool.query(
-    `INSERT INTO "PersonaContactProfile"
+    `INSERT INTO comment_agent."PersonaContactProfile"
       ("integrationId", "metaUserId", persona, username)
      VALUES ($1,$2,$3,$4)
      ON CONFLICT ("integrationId", "metaUserId") DO UPDATE
@@ -500,7 +501,7 @@ async function loadRelationship(event, account) {
 
   const profileResult = await pool.query(
     `SELECT relationship, notes, confirmed
-       FROM "PersonaContactProfile"
+       FROM comment_agent."PersonaContactProfile"
       WHERE "integrationId"=$1 AND "metaUserId"=$2`,
     [account.integrationId, event.senderId]
   );
@@ -508,7 +509,7 @@ async function loadRelationship(event, account) {
 
   const historyResult = await pool.query(
     `SELECT "commentText", status, "createdAt"
-       FROM "CommentAgentEvent"
+       FROM comment_agent."CommentAgentEvent"
       WHERE "integrationId"=$1 AND "senderId"=$2 AND "commentId"<>$3
       ORDER BY "createdAt" DESC LIMIT 6`,
     [account.integrationId, event.senderId, event.commentId]
@@ -540,7 +541,7 @@ async function loadRelationship(event, account) {
 
 async function updateEvent(commentId, status, error = null) {
   await pool.query(
-    `UPDATE "CommentAgentEvent"
+    `UPDATE comment_agent."CommentAgentEvent"
         SET status=$2, error=$3, "processedAt"=NOW()
       WHERE "commentId"=$1`,
     [commentId, status, error]
@@ -730,8 +731,8 @@ const server = http.createServer(async (request, response) => {
     const { rows } = await pool.query(
       `SELECT d.id, d."commentId", d."integrationId", d.persona, d.draft, d.status,
               d."createdAt", e.username, e."commentText", e.platform
-         FROM "PersonaReplyDraft" d
-         JOIN "CommentAgentEvent" e ON e."commentId" = d."commentId"
+         FROM comment_agent."PersonaReplyDraft" d
+         JOIN comment_agent."CommentAgentEvent" e ON e."commentId" = d."commentId"
         ORDER BY d."createdAt" DESC LIMIT 100`
     );
     return sendJson(response, 200, { drafts: rows });
@@ -742,7 +743,7 @@ const server = http.createServer(async (request, response) => {
     const { rows } = await pool.query(
       `SELECT "commentId", platform, "integrationId", persona, username, "commentText",
               action, reason, status, error, "createdAt", "processedAt"
-         FROM "CommentAgentEvent" ORDER BY "createdAt" DESC LIMIT 200`
+         FROM comment_agent."CommentAgentEvent" ORDER BY "createdAt" DESC LIMIT 200`
     );
     return sendJson(response, 200, { events: rows });
   }
@@ -752,7 +753,7 @@ const server = http.createServer(async (request, response) => {
     const { rows } = await pool.query(
       `SELECT "integrationId", "metaAccountId", platform, persona, fields, status,
               error, "updatedAt"
-         FROM "MetaAccountSubscription" ORDER BY persona, platform`
+         FROM comment_agent."MetaAccountSubscription" ORDER BY persona, platform`
     );
     return sendJson(response, 200, { accounts: rows });
   }
@@ -799,7 +800,7 @@ const server = http.createServer(async (request, response) => {
     const { rows } = await pool.query(
       `SELECT "integrationId", "metaUserId", persona, username, relationship, notes,
               confirmed, "createdAt", "updatedAt"
-         FROM "PersonaContactProfile" ORDER BY "updatedAt" DESC LIMIT 500`
+         FROM comment_agent."PersonaContactProfile" ORDER BY "updatedAt" DESC LIMIT 500`
     );
     return sendJson(response, 200, { contacts: rows });
   }
@@ -814,11 +815,11 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 400, { error: 'Invalid contact profile' });
       }
       const { rows } = await pool.query(
-        `INSERT INTO "PersonaContactProfile"
+        `INSERT INTO comment_agent."PersonaContactProfile" AS existing
           ("integrationId", "metaUserId", persona, username, relationship, notes, confirmed)
          VALUES ($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT ("integrationId", "metaUserId") DO UPDATE
-           SET persona=EXCLUDED.persona, username=COALESCE(EXCLUDED.username, "PersonaContactProfile".username),
+           SET persona=EXCLUDED.persona, username=COALESCE(EXCLUDED.username, existing.username),
                relationship=EXCLUDED.relationship, notes=EXCLUDED.notes,
                confirmed=EXCLUDED.confirmed, "updatedAt"=NOW()
          RETURNING "integrationId", "metaUserId", persona, username, relationship, notes, confirmed`,
