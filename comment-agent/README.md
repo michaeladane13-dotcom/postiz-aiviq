@@ -47,3 +47,6 @@ The Meta callback URL is `https://<service-domain>/webhooks/meta`.
 Confirmed relationship profiles can be listed or updated through the protected
 `/admin/contacts` endpoint. The server always derives the persona from the fixed
 integration route; callers cannot assign a contact to a different persona.
+
+The five Chaya `REELS33` promotion-specific comment rules and human-review
+boundaries are documented in [REELS33-HANDOVER.md](REELS33-HANDOVER.md).

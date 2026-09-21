@@ -124,6 +124,70 @@ export function buildSafeTemplateReply({
   return sanitizeReplyText(replies[stableReplyIndex(`${senderId}:${normalized}`, replies.length)]);
 }
 
+const CHAYA_REELS33_OPENINGS = Object.freeze([
+  'A lot of people ask what actually happens once they book',
+  'The question you ask shapes the reading you get',
+  'Nearly every message I get starts with sorry',
+  "I'm a fourth generation psychic and medium",
+  'If you could ask me one thing and have it answered in writing',
+]);
+
+/** Only the five approved Chaya promotions are eligible for campaign-specific live replies. */
+export function chayaReels33Post(postText) {
+  const normalized = normalizeComment(postText);
+  if (!normalized.includes('REELS33')) return 0;
+  const index = CHAYA_REELS33_OPENINGS.findIndex((opening) => normalized.startsWith(opening));
+  return index < 0 ? 0 : index + 1;
+}
+
+/** Return a curated public reply, a human-review reason, or null for ordinary policy. */
+export function chayaReels33Decision({ persona, postText, comment }) {
+  if (persona !== 'chaya') return null;
+  const reel = chayaReels33Post(postText);
+  if (!reel) return null;
+  const normalized = normalizeComment(comment);
+  const simpleBookingQuestion = /^(?:how\s+(?:do|can)\s+i\s+book|where\s+(?:do|can)\s+i\s+book|where(?:'s|\s+is)\s+the\s+link|what(?:'s|\s+is)\s+the\s+(?:code|discount\s+code)|(?:does|is)\s+(?:the\s+)?code\s+reels33\s+work(?:ing)?)\??$/i.test(normalized);
+
+  // The caption invites a real reading for one chosen question. Never pick or
+  // answer that question automatically, especially when it is personal.
+  if (reel === 5 && !simpleBookingQuestion && (normalized.includes('?') || /\b(?:question|read\s+(?:for|me)|pick\s+me)\b/i.test(normalized))) {
+    return { action: 'review', reason: 'one_question_selection' };
+  }
+
+  // The original call to action promises a list. Deliver it publicly as a
+  // comment reply; this agent has no DM workflow and must not imply one ran.
+  if (reel === 2 && /^question[.!?\s]*$/i.test(normalized)) {
+    return {
+      action: 'reply',
+      reason: 'question_list',
+      text: 'Here are three to try 💜 What do I need to understand about this? What’s getting in the way? What am I missing?',
+    };
+  }
+
+  // A broken code or account-specific booking issue needs a real person.
+  if (/\b(?:doesn'?t\s+work|not\s+working|invalid|expired|charged|refund|payment|paid|didn'?t\s+get|never\s+received|no\s+reply)\b/i.test(normalized)) {
+    return { action: 'review', reason: 'booking_or_code_issue' };
+  }
+  if (/\b(?:how\s+much|what\s+(?:percent|percentage|amount)|price|cost)\b/i.test(normalized)) {
+    return { action: 'review', reason: 'discount_terms_unknown' };
+  }
+
+  // Avoid automatically interpreting a person's situation or answering an
+  // open-ended question just because it appears on a promotional reel.
+  if (normalized.includes('?') && !simpleBookingQuestion) {
+    return { action: 'review', reason: 'personal_or_open_question' };
+  }
+
+  if (simpleBookingQuestion) {
+    return {
+      action: 'reply',
+      reason: 'booking_link_and_code',
+      text: 'You can book through the link in my bio and enter REELS33 at checkout for the discount 💜',
+    };
+  }
+  return null;
+}
+
 export const ACCOUNT_ROUTES = Object.freeze({
   cmt0ql9300001msb2pvozfwe9: Object.freeze({ persona: 'chaya', platform: 'instagram' }),
   cmt1vavvs0007myc1cbsep0dd: Object.freeze({ persona: 'chaya', platform: 'facebook' }),

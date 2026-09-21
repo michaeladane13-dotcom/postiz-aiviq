@@ -4,6 +4,8 @@ import {
   ACCOUNT_ROUTES,
   buildReplyPrompt,
   buildSafeTemplateReply,
+  chayaReels33Decision,
+  chayaReels33Post,
   classifyComment,
   metaSubscriptionStrategy,
   routeIntegration,
@@ -231,4 +233,55 @@ test('all reply text is forced to remain free of em dashes', () => {
       assert.doesNotMatch(reply, /\u2014/);
     }
   }
+});
+
+const reels33Posts = [
+  'A lot of people ask what actually happens once they book, so here it is. Use code REELS33.',
+  'The question you ask shapes the reading you get. Comment QUESTION and use REELS33.',
+  'Nearly every message I get starts with sorry. Use REELS33.',
+  "I'm a fourth generation psychic and medium, and the first thing I was taught was how to listen. REELS33",
+  'If you could ask me one thing and have it answered in writing, what would it be? REELS33',
+];
+
+test('only the five approved Chaya captions activate promotion rules', () => {
+  assert.deepEqual(reels33Posts.map(chayaReels33Post), [1, 2, 3, 4, 5]);
+  assert.equal(chayaReels33Post('A generic reel with REELS33'), 0);
+  assert.equal(chayaReels33Post('The question you ask shapes the reading you get.'), 0);
+  assert.equal(chayaReels33Decision({
+    persona: 'ren', postText: reels33Posts[1], comment: 'QUESTION',
+  }), null);
+});
+
+test('QUESTION gets the promised public list on reel two only', () => {
+  const decision = chayaReels33Decision({
+    persona: 'chaya', postText: reels33Posts[1], comment: 'QUESTION!',
+  });
+  assert.equal(decision.action, 'reply');
+  assert.equal(decision.reason, 'question_list');
+  assert.match(decision.text, /What do I need to understand/);
+  assert.doesNotMatch(decision.text, /DM|sent you|private/);
+  assert.equal(chayaReels33Decision({
+    persona: 'chaya', postText: reels33Posts[0], comment: 'QUESTION!',
+  }), null);
+});
+
+test('simple booking questions get the code and bio link, not invented terms', () => {
+  for (const postText of reels33Posts) {
+    const decision = chayaReels33Decision({ persona: 'chaya', postText, comment: 'How do I book?' });
+    assert.equal(decision.action, 'reply');
+    assert.match(decision.text, /link in my bio.*REELS33/);
+    assert.doesNotMatch(decision.text, /%|expires|free/);
+  }
+});
+
+test('personal questions and discount problems stay in human review', () => {
+  for (const comment of ['Will my ex come back?', 'Can you read for my late mother?', 'What percentage is the code?', "REELS33 doesn't work", 'I paid and never received it']) {
+    const decision = chayaReels33Decision({
+      persona: 'chaya', postText: reels33Posts[0], comment,
+    });
+    assert.equal(decision.action, 'review', comment);
+  }
+  assert.deepEqual(chayaReels33Decision({
+    persona: 'chaya', postText: reels33Posts[4], comment: 'My question is, will I get the job?',
+  }), { action: 'review', reason: 'one_question_selection' });
 });

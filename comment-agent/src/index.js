@@ -8,6 +8,7 @@ import {
   PERSONAS,
   buildReplyPrompt,
   buildSafeTemplateReply,
+  chayaReels33Decision,
   classifyComment,
   metaSubscriptionStrategy,
   routeIntegration,
@@ -572,6 +573,41 @@ async function processEvent(event) {
       }
       if (relationship.engagement === 'manual_review') {
         await updateEvent(event.commentId, 'needs_review_client_rule');
+        return;
+      }
+      const promotion = chayaReels33Decision({
+        persona: account.persona,
+        postText,
+        comment: event.text,
+      });
+      if (promotion?.action === 'review') {
+        await updateEvent(event.commentId, `needs_review_${promotion.reason}`);
+        return;
+      }
+      if (promotion?.action === 'reply') {
+        if (REPLY_MODE === 'limited_live') {
+          try {
+            await publishReply(event, account, promotion.text);
+            await saveDraft({
+              event, account, draft: promotion.text,
+              status: 'published_promo', model: 'curated-reels33-v1',
+            });
+            await updateEvent(event.commentId, `replied_${promotion.reason}`);
+          } catch (error) {
+            const message = String(error.message).slice(0, 1000);
+            await saveDraft({
+              event, account, draft: promotion.text,
+              status: 'publish_failed', model: 'curated-reels33-v1', error: message,
+            });
+            await updateEvent(event.commentId, 'reply_failed', message);
+          }
+        } else {
+          await saveDraft({
+            event, account, draft: promotion.text,
+            status: 'pending_promo', model: 'curated-reels33-v1',
+          });
+          await updateEvent(event.commentId, `drafted_${promotion.reason}`);
+        }
         return;
       }
       const safeTemplate = buildSafeTemplateReply({
