@@ -80,6 +80,21 @@ const CURATED_REPLIES = Object.freeze({
       'Good to hear from you again. I’m glad this landed.',
     ]),
   }),
+  nadja: Object.freeze({
+    new_follower: Object.freeze([
+      'Thank you, lovely. I’m glad this resonated with you.',
+      'I’m so glad this found you. Thank you for being here.',
+      'Thank you for sharing that. I’m glad it landed.',
+    ]),
+    regular: Object.freeze([
+      'Lovely to see you here again. I’m glad this resonated.',
+      'Thank you for coming back to share that, lovely.',
+    ]),
+    friend_regular: Object.freeze([
+      'Always lovely to see you here. I’m glad this one resonated.',
+      'So good to see you here again. I’m glad this landed.',
+    ]),
+  }),
 });
 
 const LOTTERY_REPLIES = Object.freeze({
@@ -89,6 +104,8 @@ const LOTTERY_REPLIES = Object.freeze({
     'We can see what comes through in a reading, but we don’t give out lottery numbers. If we knew those, we’d be rich already 😂',
   david:
     'We can explore what comes through in a reading, but we don’t give out lottery numbers. If we knew those, we’d be rich too 😂',
+  nadja:
+    'We can see what comes through in a reading, lovely, but we don’t give out lottery numbers. If we knew those, we’d be rich too 😂',
 });
 
 function stableReplyIndex(value, size) {
@@ -193,6 +210,7 @@ export const ACCOUNT_ROUTES = Object.freeze({
   cmt1vavvs0007myc1cbsep0dd: Object.freeze({ persona: 'chaya', platform: 'facebook' }),
   cmt0qnn4j0005msb2y947wjgo: Object.freeze({ persona: 'ren', platform: 'instagram' }),
   cmt3axou80001l6padw48ggsi: Object.freeze({ persona: 'ren', platform: 'facebook' }),
+  cmt0qpsu7000bmsb2oga61nh4: Object.freeze({ persona: 'nadja', platform: 'instagram' }),
   cmt0rnpaa0003n4bf1mkdhe9s: Object.freeze({ persona: 'david', platform: 'facebook' }),
 });
 
@@ -233,6 +251,11 @@ export const PERSONAS = Object.freeze({
     displayName: 'David',
     voice:
       'Calm, kind, assured and reflective, with understated mystical language. Keep public replies brief and natural. Avoid Chaya’s playful phrasing and Ren’s art-focused phrasing. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Never use em dashes. Do not sign the reply.',
+  }),
+  nadja: Object.freeze({
+    displayName: 'Nadja',
+    voice:
+      'Warm, grounded, direct and intuitive. Keep replies concise and natural, with gentle mystical language. Avoid copying Chaya, Ren or David. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Never use em dashes. Do not sign the reply.',
   }),
 });
 

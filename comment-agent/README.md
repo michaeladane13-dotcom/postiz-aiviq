@@ -1,7 +1,7 @@
 # Meta comment agent
 
 Account-locked moderation and shadow-mode persona reply drafting for the approved
-Chaya, Ren and David Facebook/Instagram integrations.
+Chaya, Ren, Nadja and David Facebook/Instagram integrations.
 
 ## Safety behaviour
 
@@ -18,9 +18,19 @@ Chaya, Ren and David Facebook/Instagram integrations.
 - A private, public-safe client directory is refreshed from GitHub at startup and
   every eight hours. Social aliases are matched exactly after case-folding, trimming
   and removing one leading `@`; fuzzy matching is intentionally forbidden.
-- The agent reads only `social-public-profiles.json`. It never reads the handover
-  repository's confidential README or sends client labels/private context into reply
-  generation.
+- Public replies use only `social-public-profiles.json` and never receive the
+  handover repository's confidential README.
+- The inbox responder refreshes the confidential handover README every eight hours.
+  It can use only the section belonging to an exact matched Chaya identity, only in
+  a private DM, and only as background for tone and continuity. Unresolved identities,
+  public replies, and the Ren, Nadja and David inboxes never receive that context.
+- Inbox handling is locked to the exact Chaya Facebook and Instagram, Ren Facebook
+  and Instagram, Nadja Instagram, and David Facebook integrations. The similarly
+  named Nadia Facebook Page is not included.
+- Safe greeting, gratitude and reading-inquiry templates can run without a model.
+  Any other ordinary inbox message needs the configured model. Technology-identity
+  questions, distress, medical/legal/financial subjects, orders and disputes go to
+  review without an automatic reply.
 - Each approved Facebook Page and Instagram professional account is installed on the
   app automatically and retried every ten minutes if Meta reports a missing permission.
 - All received decisions and moderation results are logged in Postgres.
@@ -37,14 +47,19 @@ Chaya, Ren and David Facebook/Instagram integrations.
 - `REPLY_MODE` (optional; `shadow` by default, or `limited_live` for curated replies)
 - `CHAYA_SALES_PRIVATE_REPLIES_ENABLED` (optional; must be exactly `true` to enable
   the approved Chaya comment-to-private-message sales flow)
+- `META_INBOX_RESPONDER_ENABLED` (optional; must be exactly `true` to enable the
+  exact-account inbox responder)
 - `PRIVATE_REPLY_PER_MINUTE` (optional; conservative default `10` per integration)
 - `PRIVATE_REPLY_PER_DAY` (optional; conservative default `200` per integration)
+- `INBOX_REPLY_PER_MINUTE` (optional; conservative default `20` per integration)
+- `INBOX_REPLY_PER_DAY` (optional; conservative default `500` per integration)
 - `SALES_REPORT_TIME_ZONE` (optional; defaults to `America/Vancouver`)
 - `CLIENT_HANDOVER_GITHUB_TOKEN` (fine-grained, read-only contents access to the
   private `chaya-client-handover` repository)
 - `CLIENT_HANDOVER_REPO` (optional; defaults to
   `michaeladane13-dotcom/chaya-client-handover`)
 - `CLIENT_HANDOVER_PATH` (optional; defaults to `social-public-profiles.json`)
+- `CLIENT_HANDOVER_KNOWLEDGE_PATH` (optional; defaults to `README.md`)
 - `CLIENT_HANDOVER_REF` (optional; defaults to `main`)
 
 The Meta callback URL is `https://<service-domain>/webhooks/meta`.
@@ -62,3 +77,7 @@ daily aggregate reporting. A typed `YES` is recorded locally, but it is not trea
 as a Meta Marketing Messages token. This service does not send outside the standard
 24-hour window unless Meta has supplied its own opt-in token, and outside-window
 sends remain disabled.
+
+The protected `/admin/inbox-replies` endpoint records every automatic inbox decision,
+reply, Meta message id and failure. Inbox replies are never sent outside Meta's
+standard 24-hour window.

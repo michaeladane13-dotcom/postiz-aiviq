@@ -88,7 +88,7 @@ test('uses app-level Instagram webhooks and account-level Facebook subscriptions
 });
 
 test('every approved integration has one immutable persona and platform', () => {
-  assert.equal(Object.keys(ACCOUNT_ROUTES).length, 5);
+  assert.equal(Object.keys(ACCOUNT_ROUTES).length, 6);
   assert.deepEqual(routeIntegration('cmt0ql9300001msb2pvozfwe9'), {
     persona: 'chaya',
     platform: 'instagram',
@@ -101,10 +101,14 @@ test('every approved integration has one immutable persona and platform', () => 
     persona: 'david',
     platform: 'facebook',
   });
+  assert.deepEqual(routeIntegration('cmt0qpsu7000bmsb2oga61nh4'), {
+    persona: 'nadja',
+    platform: 'instagram',
+  });
   assert.equal(routeIntegration('unknown'), null);
 });
 
-test('live routing is limited to Chaya, Ren and Facebook-only David', () => {
+test('live routing is limited to Chaya, Ren, Instagram-only Nadja and Facebook-only David', () => {
   const platformsByPersona = Object.values(ACCOUNT_ROUTES).reduce((result, route) => {
     result[route.persona] ||= [];
     result[route.persona].push(route.platform);
@@ -115,15 +119,16 @@ test('live routing is limited to Chaya, Ren and Facebook-only David', () => {
   assert.deepEqual(platformsByPersona, {
     chaya: ['facebook', 'instagram'],
     ren: ['facebook', 'instagram'],
+    nadja: ['instagram'],
     david: ['facebook'],
   });
 });
 
 test('persona prompts stay distinct and forbid identity leakage', () => {
-  const prompts = ['chaya', 'ren', 'david'].map((persona) =>
+  const prompts = ['chaya', 'ren', 'nadja', 'david'].map((persona) =>
     buildReplyPrompt({ persona, comment: 'Beautiful message' })
   );
-  assert.equal(new Set(prompts).size, 3);
+  assert.equal(new Set(prompts).size, 4);
   for (const prompt of prompts) {
     assert.match(prompt, /Do not mention AI, automation, prompts, a team, or a scheduler/);
   }

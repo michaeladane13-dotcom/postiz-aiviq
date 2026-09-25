@@ -3,6 +3,14 @@ import http from 'node:http';
 import { Pool } from 'pg';
 import { BufferApi } from './buffer.js';
 import { GitHubClientDirectory } from './client-directory.js';
+import { GitHubHandoverKnowledge } from './handover-knowledge.js';
+import {
+  buildInboxReplyPrompt,
+  buildSafeInboxTemplateReply,
+  classifyInboxMessage,
+  isApprovedInboxAccount,
+  validateInboxReply,
+} from './inbox.js';
 import { extractMetaEvents } from './meta-events.js';
 import {
   ACCOUNT_ROUTES,
@@ -40,14 +48,19 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const REPLY_MODE = process.env.REPLY_MODE || 'shadow';
 const CHAYA_SALES_PRIVATE_REPLIES_ENABLED =
   process.env.CHAYA_SALES_PRIVATE_REPLIES_ENABLED === 'true';
+const META_INBOX_RESPONDER_ENABLED = process.env.META_INBOX_RESPONDER_ENABLED === 'true';
 const PRIVATE_REPLY_PER_MINUTE = Number(process.env.PRIVATE_REPLY_PER_MINUTE || 10);
 const PRIVATE_REPLY_PER_DAY = Number(process.env.PRIVATE_REPLY_PER_DAY || 200);
+const INBOX_REPLY_PER_MINUTE = Number(process.env.INBOX_REPLY_PER_MINUTE || 20);
+const INBOX_REPLY_PER_DAY = Number(process.env.INBOX_REPLY_PER_DAY || 500);
 const SALES_REPORT_TIME_ZONE = process.env.SALES_REPORT_TIME_ZONE || 'America/Vancouver';
 const BUFFER_API_KEY = process.env.BUFFER_API_KEY || '';
 const bufferApi = new BufferApi(BUFFER_API_KEY);
 const CLIENT_HANDOVER_REPO = process.env.CLIENT_HANDOVER_REPO ||
   'michaeladane13-dotcom/chaya-client-handover';
 const CLIENT_HANDOVER_PATH = process.env.CLIENT_HANDOVER_PATH || 'social-public-profiles.json';
+const CLIENT_HANDOVER_KNOWLEDGE_PATH =
+  process.env.CLIENT_HANDOVER_KNOWLEDGE_PATH || 'README.md';
 const CLIENT_HANDOVER_REF = process.env.CLIENT_HANDOVER_REF || 'main';
 const CLIENT_HANDOVER_GITHUB_TOKEN = process.env.CLIENT_HANDOVER_GITHUB_TOKEN || '';
 const CLIENT_HANDOVER_SYNC_MS = 8 * 60 * 60 * 1000;
@@ -57,9 +70,19 @@ const clientDirectory = new GitHubClientDirectory({
   ref: CLIENT_HANDOVER_REF,
   token: CLIENT_HANDOVER_GITHUB_TOKEN,
 });
+const handoverKnowledge = new GitHubHandoverKnowledge({
+  repository: CLIENT_HANDOVER_REPO,
+  path: CLIENT_HANDOVER_KNOWLEDGE_PATH,
+  ref: CLIENT_HANDOVER_REF,
+  token: CLIENT_HANDOVER_GITHUB_TOKEN,
+});
 const privateReplyRateLimiter = new PrivateReplyRateLimiter({
   perMinute: PRIVATE_REPLY_PER_MINUTE,
   perDay: PRIVATE_REPLY_PER_DAY,
+});
+const inboxReplyRateLimiter = new PrivateReplyRateLimiter({
+  perMinute: INBOX_REPLY_PER_MINUTE,
+  perDay: INBOX_REPLY_PER_DAY,
 });
 
 for (const [name, value] of Object.entries({
@@ -197,6 +220,28 @@ async function migrate() {
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "processedAt" TIMESTAMPTZ
     );
+    CREATE TABLE IF NOT EXISTS comment_agent."InboxReplyLog" (
+      "messageId" TEXT PRIMARY KEY REFERENCES comment_agent."MessagingInboundEvent"("messageId") ON DELETE CASCADE,
+      platform TEXT NOT NULL,
+      "integrationId" TEXT NOT NULL,
+      "metaAccountId" TEXT NOT NULL,
+      persona TEXT NOT NULL,
+      "recipientId" TEXT NOT NULL,
+      "senderUsername" TEXT,
+      "senderName" TEXT,
+      "clientProfileId" TEXT,
+      category TEXT NOT NULL,
+      "knowledgeSourceUpdatedAt" TEXT,
+      "replyText" TEXT,
+      status TEXT NOT NULL DEFAULT 'reserved',
+      model TEXT,
+      "metaMessageId" TEXT,
+      error TEXT,
+      "attemptedAt" TIMESTAMPTZ,
+      "sentAt" TIMESTAMPTZ,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS comment_agent."MessagingOptIn" (
       platform TEXT NOT NULL,
       "integrationId" TEXT NOT NULL,
@@ -225,6 +270,10 @@ async function migrate() {
       ON comment_agent."PrivateReplyLog" ("integrationId", "metaRecipientId", "sentAt" DESC);
     CREATE INDEX IF NOT EXISTS "MessagingOptIn_localOptInAt_idx"
       ON comment_agent."MessagingOptIn" ("localOptInAt" DESC);
+    CREATE INDEX IF NOT EXISTS "InboxReplyLog_sentAt_idx"
+      ON comment_agent."InboxReplyLog" ("sentAt" DESC);
+    CREATE INDEX IF NOT EXISTS "InboxReplyLog_recipient_idx"
+      ON comment_agent."InboxReplyLog" ("integrationId", "recipientId", "createdAt" DESC);
   `);
 }
 
@@ -255,11 +304,28 @@ async function loadAccounts() {
       persona: route.persona,
       name: row.name,
       accessToken: String(row.token).split('___')[0],
+      messagingEndpointId: route.platform === 'facebook' ? String(row.internalId) : null,
+      messagingEndpointError: null,
     });
   }
 
   const missing = integrationIds.filter((id) => !rows.some((row) => row.id === id));
   if (missing.length) throw new Error(`Missing approved integrations: ${missing.join(', ')}`);
+
+  if (META_INBOX_RESPONDER_ENABLED || CHAYA_SALES_PRIVATE_REPLIES_ENABLED) {
+    for (const account of loaded.values()) {
+      if (account.platform !== 'instagram') continue;
+      if (
+        !(META_INBOX_RESPONDER_ENABLED && isApprovedInboxAccount(account)) &&
+        !(CHAYA_SALES_PRIVATE_REPLIES_ENABLED && isChayaSalesAccount(account))
+      ) continue;
+      try {
+        account.messagingEndpointId = await resolveInstagramMessagingEndpoint(account);
+      } catch (error) {
+        account.messagingEndpointError = String(error.message).slice(0, 500);
+      }
+    }
+  }
   accountsByMetaId = loaded;
 }
 
@@ -311,6 +377,20 @@ async function graphRequest(path, accessToken, options = {}, host = 'graph.faceb
   return body;
 }
 
+async function resolveInstagramMessagingEndpoint(account) {
+  const me = await graphRequest(
+    `me?fields=${encodeURIComponent('id,name,instagram_business_account{id,username}')}`,
+    account.accessToken
+  );
+  const connectedInstagramId = String(me?.instagram_business_account?.id || '');
+  if (connectedInstagramId && connectedInstagramId !== account.metaAccountId) {
+    throw new Error('The Instagram token is connected to a different professional account');
+  }
+  if (connectedInstagramId) return String(me.id);
+  if (String(me?.id || '') === account.metaAccountId) return account.metaAccountId;
+  throw new Error('Could not resolve the Facebook Page or Instagram account messaging endpoint');
+}
+
 async function syncSubscriptions() {
   const summary = {
     subscribed: 0,
@@ -322,7 +402,8 @@ async function syncSubscriptions() {
   for (const account of accountsByMetaId.values()) {
     const strategy = metaSubscriptionStrategy(account.platform, account.metaAccountId, {
       includeMessaging:
-        CHAYA_SALES_PRIVATE_REPLIES_ENABLED && isChayaSalesAccount(account),
+        (CHAYA_SALES_PRIVATE_REPLIES_ENABLED && isChayaSalesAccount(account)) ||
+        (META_INBOX_RESPONDER_ENABLED && isApprovedInboxAccount(account)),
     });
     const fields = strategy.fields;
     let status = strategy.mode === 'app_level' ? 'configured_app_webhook' : 'subscribed';
@@ -501,8 +582,12 @@ async function sendStandardMessage(event, account, message) {
   if (!isWithinStandardMessagingWindow(event.timestamp)) {
     throw new Error('The standard Meta messaging window is closed');
   }
-  const pageId = account.platform === 'instagram' ? CHAYA_FACEBOOK_PAGE_ID : account.metaAccountId;
-  return graphRequest(`${encodeURIComponent(pageId)}/messages`, account.accessToken, {
+  const endpointId = account.messagingEndpointId ||
+    (account.platform === 'facebook' ? account.metaAccountId : null);
+  if (!endpointId) {
+    throw new Error(account.messagingEndpointError || 'The Meta messaging endpoint is not resolved');
+  }
+  return graphRequest(`${encodeURIComponent(endpointId)}/messages`, account.accessToken, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -785,15 +870,129 @@ async function updateInboundMessage(messageId, status, error = null) {
   );
 }
 
-async function processInboundMessage(event) {
-  const account = accountsByMetaId.get(event.metaAccountId);
-  if (!account || !isChayaSalesAccount(account)) return;
-  if (!(await saveInboundMessage(event, account))) return;
-  if (!isYesOptIn(event.text)) {
-    await updateInboundMessage(event.messageId, 'ignored_not_yes');
-    return;
+async function fetchMetaSenderProfile(event, account) {
+  const fields = account.platform === 'instagram'
+    ? 'id,name,username'
+    : 'id,name,first_name,last_name';
+  try {
+    const profile = await graphRequest(
+      `${encodeURIComponent(event.senderId)}?fields=${encodeURIComponent(fields)}`,
+      account.accessToken
+    );
+    return {
+      username: String(profile?.username || '').slice(0, 200),
+      name: String(
+        profile?.name ||
+        [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') ||
+        ''
+      ).slice(0, 200),
+      error: null,
+    };
+  } catch (error) {
+    return { username: '', name: '', error: String(error.message).slice(0, 500) };
   }
+}
 
+async function reserveInboxReply({ event, account, senderProfile, directoryProfile, category }) {
+  const knowledgeStatus = handoverKnowledge.status();
+  const result = await pool.query(
+    `INSERT INTO comment_agent."InboxReplyLog"
+      ("messageId", platform, "integrationId", "metaAccountId", persona, "recipientId",
+       "senderUsername", "senderName", "clientProfileId", category,
+       "knowledgeSourceUpdatedAt")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT ("messageId") DO NOTHING
+     RETURNING "messageId"`,
+    [
+      event.messageId,
+      event.platform,
+      account.integrationId,
+      account.metaAccountId,
+      account.persona,
+      event.senderId,
+      senderProfile.username || null,
+      senderProfile.name || null,
+      directoryProfile?.id || null,
+      category,
+      directoryProfile && account.persona === 'chaya'
+        ? knowledgeStatus.sourceUpdatedAt
+        : null,
+    ]
+  );
+  return result.rowCount === 1;
+}
+
+async function updateInboxReply(messageId, status, {
+  replyText = null,
+  model = null,
+  metaMessageId = null,
+  error = null,
+  attempted = false,
+  sent = false,
+} = {}) {
+  await pool.query(
+    `UPDATE comment_agent."InboxReplyLog"
+        SET status=$2, "replyText"=COALESCE($3,"replyText"), model=COALESCE($4,model),
+            "metaMessageId"=COALESCE($5,"metaMessageId"), error=$6,
+            "attemptedAt"=CASE WHEN $7 THEN COALESCE("attemptedAt",NOW()) ELSE "attemptedAt" END,
+            "sentAt"=CASE WHEN $8 THEN COALESCE("sentAt",NOW()) ELSE "sentAt" END,
+            "updatedAt"=NOW()
+      WHERE "messageId"=$1`,
+    [messageId, status, replyText, model, metaMessageId, error, attempted, sent]
+  );
+}
+
+async function loadRecentInboxHistory(event, account) {
+  const { rows } = await pool.query(
+    `SELECT e."messageText", e."eventTimestamp", r."replyText", r.status
+       FROM comment_agent."MessagingInboundEvent" e
+       LEFT JOIN comment_agent."InboxReplyLog" r ON r."messageId"=e."messageId"
+      WHERE e."integrationId"=$1 AND e."senderId"=$2 AND e."messageId"<>$3
+      ORDER BY e."eventTimestamp" DESC LIMIT 8`,
+    [account.integrationId, event.senderId, event.messageId]
+  );
+  return rows.reverse().map((row) => ({
+    inbound: row.messageText,
+    reply: row.replyText,
+    outcome: row.status,
+  }));
+}
+
+async function generateInboxReply(input) {
+  if (!OPENAI_API_KEY) {
+    return { reply: null, model: null, error: 'OPENAI_API_KEY is not configured' };
+  }
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      input: buildInboxReplyPrompt(input),
+      max_output_tokens: 180,
+      store: false,
+    }),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error?.message || `OpenAI returned HTTP ${response.status}`);
+  const raw = (body.output || [])
+    .flatMap((item) => item?.content || [])
+    .filter((part) => part?.type === 'output_text')
+    .map((part) => part.text || '')
+    .join('')
+    .trim();
+  const reply = validateInboxReply(raw, sanitizeReplyText);
+  return {
+    reply,
+    model: OPENAI_MODEL,
+    error: reply ? null : 'Generated reply violated an inbox safety rule',
+  };
+}
+
+async function processChayaYesOptIn(event, account, senderProfile) {
+  if (!isYesOptIn(event.text)) return false;
   const sourceResult = await pool.query(
     `SELECT "commentId"
        FROM comment_agent."PrivateReplyLog"
@@ -805,7 +1004,7 @@ async function processInboundMessage(event) {
   const sourceCommentId = sourceResult.rows[0]?.commentId || null;
   if (!sourceCommentId) {
     await updateInboundMessage(event.messageId, 'ignored_unlinked_yes');
-    return;
+    return true;
   }
 
   const eventTime = new Date(Number(event.timestamp));
@@ -833,25 +1032,157 @@ async function processInboundMessage(event) {
 
   if (!isWithinStandardMessagingWindow(event.timestamp)) {
     await updateInboundMessage(event.messageId, 'optin_recorded_window_closed');
-    return;
+    return true;
   }
 
+  await reserveInboxReply({
+    event,
+    account,
+    senderProfile,
+    directoryProfile: null,
+    category: 'sales_yes_opt_in',
+  });
   try {
-    await sendStandardMessage(event, account, CHAYA_YES_THANK_YOU);
+    await updateInboxReply(event.messageId, 'attempting', {
+      replyText: CHAYA_YES_THANK_YOU,
+      model: 'curated-sales-opt-in-v1',
+      attempted: true,
+    });
+    const result = await sendStandardMessage(event, account, CHAYA_YES_THANK_YOU);
     await pool.query(
       `UPDATE comment_agent."MessagingOptIn"
           SET "thankYouSentAt"=NOW(), "updatedAt"=NOW()
         WHERE "integrationId"=$1 AND "recipientId"=$2`,
       [account.integrationId, event.senderId]
     );
+    await updateInboxReply(event.messageId, 'sent', {
+      metaMessageId: String(result?.message_id || result?.id || '') || null,
+      sent: true,
+    });
     await updateInboundMessage(event.messageId, 'optin_recorded_thanked');
   } catch (error) {
+    await updateInboxReply(event.messageId, 'failed', {
+      error: String(error.message).slice(0, 1000),
+    });
     await updateInboundMessage(
       event.messageId,
       'optin_recorded_thank_failed',
       String(error.message).slice(0, 1000)
     );
   }
+  return true;
+}
+
+async function processInboxReply(event, account, senderProfile) {
+  const directoryProfile = account.persona === 'chaya'
+    ? clientDirectory.match(senderProfile.username)
+    : null;
+  const decision = classifyInboxMessage(event.text);
+  if (!(await reserveInboxReply({
+    event,
+    account,
+    senderProfile,
+    directoryProfile,
+    category: decision.category,
+  }))) return;
+
+  if (directoryProfile?.engagement === 'do_not_engage') {
+    await updateInboxReply(event.messageId, 'do_not_engage');
+    await updateInboundMessage(event.messageId, 'do_not_engage');
+    return;
+  }
+  if (directoryProfile?.engagement === 'manual_review' || decision.action === 'review') {
+    const status = directoryProfile?.engagement === 'manual_review'
+      ? 'needs_review_client_rule'
+      : `needs_review_${decision.category}`;
+    await updateInboxReply(event.messageId, status, { error: senderProfile.error });
+    await updateInboundMessage(event.messageId, status, senderProfile.error);
+    return;
+  }
+
+  let reply = decision.action === 'template'
+    ? buildSafeInboxTemplateReply(account.persona, decision.category)
+    : null;
+  let model = reply ? 'curated-inbox-v1' : null;
+  let generationError = null;
+  if (!reply) {
+    const recentHistory = await loadRecentInboxHistory(event, account);
+    const generated = await generateInboxReply({
+      displayName: PERSONAS[account.persona].displayName,
+      voice: PERSONAS[account.persona].voice,
+      message: event.text,
+      senderName: senderProfile.name || senderProfile.username,
+      recentHistory,
+      privateClientContext:
+        account.persona === 'chaya' && directoryProfile
+          ? handoverKnowledge.contextFor(directoryProfile)
+          : '',
+    });
+    reply = generated.reply;
+    model = generated.model;
+    generationError = generated.error;
+  }
+  if (!reply) {
+    await updateInboxReply(event.messageId, 'needs_review_no_safe_reply', {
+      model,
+      error: generationError || senderProfile.error,
+    });
+    await updateInboundMessage(
+      event.messageId,
+      'needs_review_no_safe_reply',
+      generationError || senderProfile.error
+    );
+    return;
+  }
+
+  const rate = inboxReplyRateLimiter.take(account.integrationId);
+  if (!rate.allowed) {
+    const error = `Conservative ${rate.reason} inbox-reply limit reached`;
+    await updateInboxReply(event.messageId, 'rate_limited_local', { replyText: reply, model, error });
+    await updateInboundMessage(event.messageId, 'rate_limited_local', error);
+    return;
+  }
+
+  try {
+    await updateInboxReply(event.messageId, 'attempting', {
+      replyText: reply,
+      model,
+      attempted: true,
+    });
+    const result = await sendStandardMessage(event, account, reply);
+    await updateInboxReply(event.messageId, 'sent', {
+      metaMessageId: String(result?.message_id || result?.id || '') || null,
+      sent: true,
+    });
+    await updateInboundMessage(event.messageId, 'replied');
+  } catch (error) {
+    const message = String(error.message).slice(0, 1000);
+    const status = error.status === 429 || error.code === 4 || error.code === 17 || error.code === 32
+      ? 'rate_limited_meta'
+      : 'failed';
+    await updateInboxReply(event.messageId, status, { error: message });
+    await updateInboundMessage(event.messageId, status, message);
+  }
+}
+
+async function processInboundMessage(event) {
+  const account = accountsByMetaId.get(event.metaAccountId);
+  if (!account || account.platform !== event.platform || !isApprovedInboxAccount(account)) return;
+  if (!(await saveInboundMessage(event, account))) return;
+
+  const senderProfile = await fetchMetaSenderProfile(event, account);
+  if (
+    CHAYA_SALES_PRIVATE_REPLIES_ENABLED &&
+    isChayaSalesAccount(account) &&
+    await processChayaYesOptIn(event, account, senderProfile)
+  ) {
+    return;
+  }
+  if (!META_INBOX_RESPONDER_ENABLED) {
+    await updateInboundMessage(event.messageId, 'inbox_responder_disabled');
+    return;
+  }
+  await processInboxReply(event, account, senderProfile);
 }
 
 async function processMarketingOptIn(event) {
@@ -1097,7 +1428,26 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === 'GET' && url.pathname === '/health') {
     const expectedAccounts = Object.keys(ACCOUNT_ROUTES).length;
-    const ok = databaseSummary.ready && accountsByMetaId.size === expectedAccounts;
+    const approvedInboxAccounts = [...accountsByMetaId.values()]
+      .filter(isApprovedInboxAccount);
+    const messagingEndpointErrors = approvedInboxAccounts
+      .filter((account) =>
+        account.platform === 'instagram' &&
+        !account.messagingEndpointId &&
+        (META_INBOX_RESPONDER_ENABLED || isChayaSalesAccount(account))
+      )
+      .map((account) => ({
+        integrationId: account.integrationId,
+        persona: account.persona,
+        error: account.messagingEndpointError || 'Messaging endpoint is not resolved',
+      }));
+    const messagingFeatureEnabled =
+      META_INBOX_RESPONDER_ENABLED || CHAYA_SALES_PRIVATE_REPLIES_ENABLED;
+    const ok =
+      databaseSummary.ready &&
+      accountsByMetaId.size === expectedAccounts &&
+      (!messagingFeatureEnabled || subscriptionSummary.failed === 0) &&
+      (!messagingFeatureEnabled || messagingEndpointErrors.length === 0);
     sendJson(response, ok ? 200 : 503, {
       ok,
       accountsLoaded: accountsByMetaId.size,
@@ -1115,7 +1465,19 @@ const server = http.createServer(async (request, response) => {
         metaMarketingTokenRequiredOutside24Hours: true,
         outside24HourSendsEnabled: false,
       },
+      inboxResponder: {
+        enabled: META_INBOX_RESPONDER_ENABLED,
+        approvedIntegrations: approvedInboxAccounts.length,
+        approvedPersonas: ['chaya', 'ren', 'nadja', 'david'],
+        rateLimitPerMinute: INBOX_REPLY_PER_MINUTE,
+        rateLimitPerDay: INBOX_REPLY_PER_DAY,
+        safeTemplatesAvailableWithoutModel: true,
+        generativeRepliesAvailable: Boolean(OPENAI_API_KEY),
+        standardWindowHours: 24,
+        messagingEndpointErrors,
+      },
       clientDirectory: clientDirectory.status(),
+      handoverKnowledge: handoverKnowledge.status(),
       tiktokScheduler: tiktokSchedulerSummary,
       subscriptions: subscriptionSummary,
       database: databaseSummary,
@@ -1207,6 +1569,19 @@ const server = http.createServer(async (request, response) => {
         ORDER BY "updatedAt" DESC LIMIT 500`
     );
     return sendJson(response, 200, { optIns: rows });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/admin/inbox-replies') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    const { rows } = await pool.query(
+      `SELECT "messageId", platform, "integrationId", "metaAccountId", persona,
+              "recipientId", "senderUsername", "senderName", "clientProfileId", category,
+              "knowledgeSourceUpdatedAt", "replyText", status, model, "metaMessageId",
+              error, "attemptedAt", "sentAt", "createdAt"
+         FROM comment_agent."InboxReplyLog"
+        ORDER BY "createdAt" DESC LIMIT 500`
+    );
+    return sendJson(response, 200, { inboxReplies: rows });
   }
 
   if (request.method === 'GET' && url.pathname === '/admin/daily-sales-report') {
@@ -1316,6 +1691,9 @@ await syncTikTokScheduler();
 await clientDirectory.sync().catch((error) => {
   console.error('client_directory_sync_failed', error.message);
 });
+await handoverKnowledge.sync().catch((error) => {
+  console.error('handover_knowledge_sync_failed', error.message);
+});
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
@@ -1334,6 +1712,10 @@ setInterval(() => {
 
 setInterval(() => {
   clientDirectory.sync().catch((error) => console.error('client_directory_sync_failed', error.message));
+}, CLIENT_HANDOVER_SYNC_MS).unref();
+
+setInterval(() => {
+  handoverKnowledge.sync().catch((error) => console.error('handover_knowledge_sync_failed', error.message));
 }, CLIENT_HANDOVER_SYNC_MS).unref();
 
 export { extractEvents };
