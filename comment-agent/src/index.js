@@ -3,6 +3,7 @@ import http from 'node:http';
 import { Pool } from 'pg';
 import { BufferApi } from './buffer.js';
 import { GitHubClientDirectory } from './client-directory.js';
+import { extractMetaEvents } from './meta-events.js';
 import {
   ACCOUNT_ROUTES,
   PERSONAS,
@@ -14,6 +15,19 @@ import {
   routeIntegration,
   sanitizeReplyText,
 } from './policy.js';
+import {
+  CHAYA_FACEBOOK_PAGE_ID,
+  CHAYA_INSTAGRAM_ACCOUNT_ID,
+  CHAYA_YES_THANK_YOU,
+  PrivateReplyRateLimiter,
+  buildChayaPrivateSalesReply,
+  buildChayaSalesPublicReply,
+  buildMetaPrivateReplyRequest,
+  isChayaSalesAccount,
+  isChayaSalesTrigger,
+  isWithinStandardMessagingWindow,
+  isYesOptIn,
+} from './sales-private-replies.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v26.0';
@@ -24,6 +38,11 @@ const ADMIN_TOKEN = process.env.COMMENT_AGENT_ADMIN_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const REPLY_MODE = process.env.REPLY_MODE || 'shadow';
+const CHAYA_SALES_PRIVATE_REPLIES_ENABLED =
+  process.env.CHAYA_SALES_PRIVATE_REPLIES_ENABLED === 'true';
+const PRIVATE_REPLY_PER_MINUTE = Number(process.env.PRIVATE_REPLY_PER_MINUTE || 10);
+const PRIVATE_REPLY_PER_DAY = Number(process.env.PRIVATE_REPLY_PER_DAY || 200);
+const SALES_REPORT_TIME_ZONE = process.env.SALES_REPORT_TIME_ZONE || 'America/Vancouver';
 const BUFFER_API_KEY = process.env.BUFFER_API_KEY || '';
 const bufferApi = new BufferApi(BUFFER_API_KEY);
 const CLIENT_HANDOVER_REPO = process.env.CLIENT_HANDOVER_REPO ||
@@ -37,6 +56,10 @@ const clientDirectory = new GitHubClientDirectory({
   path: CLIENT_HANDOVER_PATH,
   ref: CLIENT_HANDOVER_REF,
   token: CLIENT_HANDOVER_GITHUB_TOKEN,
+});
+const privateReplyRateLimiter = new PrivateReplyRateLimiter({
+  perMinute: PRIVATE_REPLY_PER_MINUTE,
+  perDay: PRIVATE_REPLY_PER_DAY,
 });
 
 for (const [name, value] of Object.entries({
@@ -141,11 +164,67 @@ async function migrate() {
       error TEXT,
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS comment_agent."PrivateReplyLog" (
+      "commentId" TEXT PRIMARY KEY REFERENCES comment_agent."CommentAgentEvent"("commentId") ON DELETE CASCADE,
+      platform TEXT NOT NULL,
+      "integrationId" TEXT NOT NULL,
+      "metaAccountId" TEXT NOT NULL,
+      "postId" TEXT,
+      "commentSenderId" TEXT,
+      "metaRecipientId" TEXT,
+      "openingVariant" INTEGER NOT NULL,
+      "messageText" TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'reserved',
+      "metaMessageId" TEXT,
+      error TEXT,
+      "attemptedAt" TIMESTAMPTZ,
+      "sentAt" TIMESTAMPTZ,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS comment_agent."MessagingInboundEvent" (
+      "messageId" TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      "integrationId" TEXT NOT NULL,
+      "metaAccountId" TEXT NOT NULL,
+      "senderId" TEXT NOT NULL,
+      "recipientId" TEXT,
+      "messageText" TEXT,
+      "eventTimestamp" TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL DEFAULT 'received',
+      error TEXT,
+      "rawEvent" JSONB,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "processedAt" TIMESTAMPTZ
+    );
+    CREATE TABLE IF NOT EXISTS comment_agent."MessagingOptIn" (
+      platform TEXT NOT NULL,
+      "integrationId" TEXT NOT NULL,
+      "metaAccountId" TEXT NOT NULL,
+      "recipientId" TEXT NOT NULL,
+      "sourceCommentId" TEXT REFERENCES comment_agent."CommentAgentEvent"("commentId") ON DELETE SET NULL,
+      "sourceMessageId" TEXT,
+      "localOptInAt" TIMESTAMPTZ,
+      "lastInboundAt" TIMESTAMPTZ,
+      "thankYouSentAt" TIMESTAMPTZ,
+      "metaMarketingToken" TEXT,
+      "metaMarketingOptInAt" TIMESTAMPTZ,
+      "marketingStatus" TEXT NOT NULL DEFAULT 'local_yes_only',
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY ("integrationId", "recipientId")
+    );
     ALTER TABLE comment_agent."CommentAgentEvent" ADD COLUMN IF NOT EXISTS "senderId" TEXT;
     CREATE INDEX IF NOT EXISTS "CommentAgentEvent_createdAt_idx"
       ON comment_agent."CommentAgentEvent" ("createdAt" DESC);
     CREATE INDEX IF NOT EXISTS "CommentAgentEvent_sender_idx"
       ON comment_agent."CommentAgentEvent" ("integrationId", "senderId", "createdAt" DESC);
+    CREATE INDEX IF NOT EXISTS "PrivateReplyLog_sentAt_idx"
+      ON comment_agent."PrivateReplyLog" ("sentAt" DESC);
+    CREATE INDEX IF NOT EXISTS "PrivateReplyLog_recipient_idx"
+      ON comment_agent."PrivateReplyLog" ("integrationId", "metaRecipientId", "sentAt" DESC);
+    CREATE INDEX IF NOT EXISTS "MessagingOptIn_localOptInAt_idx"
+      ON comment_agent."MessagingOptIn" ("localOptInAt" DESC);
   `);
 }
 
@@ -208,50 +287,7 @@ async function refreshMetaAccountState() {
 }
 
 function extractEvents(payload) {
-  const events = [];
-  const object = payload?.object;
-  for (const entry of payload?.entry || []) {
-    const changes = Array.isArray(entry.changes)
-      ? entry.changes
-      : entry.field
-        ? [{ field: entry.field, value: entry.value }]
-        : [];
-
-    for (const change of changes) {
-      const value = change?.value || {};
-      if (object === 'instagram' && ['comments', 'live_comments'].includes(change.field)) {
-        events.push({
-          platform: 'instagram',
-          metaAccountId: String(entry.id),
-          commentId: String(value.id || ''),
-          text: String(value.text || ''),
-          username: String(value.from?.username || value.from?.id || ''),
-          senderId: String(value.from?.id || ''),
-          postId: String(value.media?.id || ''),
-          raw: { object, entryId: entry.id, change },
-        });
-      }
-
-      if (
-        object === 'page' &&
-        change.field === 'feed' &&
-        value.item === 'comment' &&
-        value.verb === 'add'
-      ) {
-        events.push({
-          platform: 'facebook',
-          metaAccountId: String(entry.id),
-          commentId: String(value.comment_id || ''),
-          text: String(value.message || ''),
-          username: String(value.sender_name || value.from?.name || ''),
-          senderId: String(value.sender_id || value.from?.id || ''),
-          postId: String(value.post_id || value.parent_id || ''),
-          raw: { object, entryId: entry.id, change },
-        });
-      }
-    }
-  }
-  return events.filter((event) => event.commentId && event.metaAccountId);
+  return extractMetaEvents(payload);
 }
 
 async function graphRequest(path, accessToken, options = {}, host = 'graph.facebook.com') {
@@ -268,6 +304,8 @@ async function graphRequest(path, accessToken, options = {}, host = 'graph.faceb
   if (!response.ok || body?.error) {
     const error = new Error(body?.error?.message || `Meta returned HTTP ${response.status}`);
     error.code = body?.error?.code;
+    error.status = response.status;
+    error.retryAfter = Number(response.headers.get('retry-after') || 0);
     throw error;
   }
   return body;
@@ -282,7 +320,10 @@ async function syncSubscriptions() {
     reasons: {},
   };
   for (const account of accountsByMetaId.values()) {
-    const strategy = metaSubscriptionStrategy(account.platform, account.metaAccountId);
+    const strategy = metaSubscriptionStrategy(account.platform, account.metaAccountId, {
+      includeMessaging:
+        CHAYA_SALES_PRIVATE_REPLIES_ENABLED && isChayaSalesAccount(account),
+    });
     const fields = strategy.fields;
     let status = strategy.mode === 'app_level' ? 'configured_app_webhook' : 'subscribed';
     let error = null;
@@ -436,6 +477,168 @@ async function publishReply(event, account, message) {
   });
 }
 
+async function publishPrivateSalesReply(event, account, message) {
+  const request = buildMetaPrivateReplyRequest({
+    platform: account.platform,
+    commentId: event.commentId,
+    message: sanitizeReplyText(message),
+  });
+  if (request.form) {
+    return graphRequest(request.path, account.accessToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(request.form),
+    });
+  }
+  return graphRequest(request.path, account.accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request.json),
+  });
+}
+
+async function sendStandardMessage(event, account, message) {
+  if (!isWithinStandardMessagingWindow(event.timestamp)) {
+    throw new Error('The standard Meta messaging window is closed');
+  }
+  const pageId = account.platform === 'instagram' ? CHAYA_FACEBOOK_PAGE_ID : account.metaAccountId;
+  return graphRequest(`${encodeURIComponent(pageId)}/messages`, account.accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: event.senderId },
+      messaging_type: 'RESPONSE',
+      message: { text: sanitizeReplyText(message) },
+    }),
+  });
+}
+
+async function sendChayaSalesPrivateReply(event, account) {
+  const reply = buildChayaPrivateSalesReply(event.commentId);
+  const reservation = await pool.query(
+    `INSERT INTO comment_agent."PrivateReplyLog"
+      ("commentId", platform, "integrationId", "metaAccountId", "postId", "commentSenderId",
+       "openingVariant", "messageText")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT ("commentId") DO NOTHING
+     RETURNING "commentId"`,
+    [
+      event.commentId,
+      event.platform,
+      account.integrationId,
+      account.metaAccountId,
+      event.postId || null,
+      event.senderId || null,
+      reply.openingVariant,
+      reply.message,
+    ]
+  );
+  if (reservation.rowCount !== 1) return { status: 'duplicate', error: null };
+
+  const rate = privateReplyRateLimiter.take(account.integrationId);
+  if (!rate.allowed) {
+    await pool.query(
+      `UPDATE comment_agent."PrivateReplyLog"
+          SET status='rate_limited_local', error=$2, "updatedAt"=NOW()
+        WHERE "commentId"=$1`,
+      [event.commentId, `Conservative ${rate.reason} private-reply limit reached`]
+    );
+    return { status: 'rate_limited_local', error: rate.reason };
+  }
+
+  await pool.query(
+    `UPDATE comment_agent."PrivateReplyLog"
+        SET status='attempting', "attemptedAt"=NOW(), "updatedAt"=NOW()
+      WHERE "commentId"=$1`,
+    [event.commentId]
+  );
+  try {
+    const result = await publishPrivateSalesReply(event, account, reply.message);
+    await pool.query(
+      `UPDATE comment_agent."PrivateReplyLog"
+          SET status='sent', "metaRecipientId"=$2, "metaMessageId"=$3,
+              error=NULL, "sentAt"=NOW(), "updatedAt"=NOW()
+        WHERE "commentId"=$1`,
+      [
+        event.commentId,
+        String(result?.recipient_id || event.senderId || '') || null,
+        String(result?.message_id || result?.id || '') || null,
+      ]
+    );
+    return { status: 'sent', error: null };
+  } catch (error) {
+    const message = String(error.message).slice(0, 1000);
+    const status = error.status === 429 || error.code === 4 || error.code === 17 || error.code === 32
+      ? 'rate_limited_meta'
+      : 'failed';
+    await pool.query(
+      `UPDATE comment_agent."PrivateReplyLog"
+          SET status=$2, error=$3, "updatedAt"=NOW()
+        WHERE "commentId"=$1`,
+      [event.commentId, status, message]
+    );
+    return { status, error: message };
+  }
+}
+
+async function processChayaSalesComment(event, account) {
+  const publicReply = buildChayaSalesPublicReply(event.commentId);
+  let publicSent = false;
+  let publicError = null;
+  if (REPLY_MODE === 'limited_live') {
+    try {
+      await publishReply(event, account, publicReply);
+      publicSent = true;
+      await saveDraft({
+        event,
+        account,
+        draft: publicReply,
+        status: 'published_sales_public',
+        model: 'curated-sales-public-v1',
+      });
+    } catch (error) {
+      publicError = String(error.message).slice(0, 1000);
+      await saveDraft({
+        event,
+        account,
+        draft: publicReply,
+        status: 'sales_public_failed',
+        model: 'curated-sales-public-v1',
+        error: publicError,
+      });
+    }
+  } else {
+    await saveDraft({
+      event,
+      account,
+      draft: publicReply,
+      status: 'pending_sales_public',
+      model: 'curated-sales-public-v1',
+    });
+    await updateEvent(event.commentId, 'drafted_sales_public_private_disabled');
+    return;
+  }
+
+  const privateResult = await sendChayaSalesPrivateReply(event, account);
+  if (publicSent && privateResult.status === 'sent') {
+    await updateEvent(event.commentId, 'replied_sales_public_and_private');
+  } else if (publicSent) {
+    await updateEvent(
+      event.commentId,
+      'replied_sales_public_private_failed',
+      privateResult.error || privateResult.status
+    );
+  } else if (privateResult.status === 'sent') {
+    await updateEvent(event.commentId, 'sales_private_sent_public_failed', publicError);
+  } else {
+    await updateEvent(
+      event.commentId,
+      'sales_public_and_private_failed',
+      [publicError, privateResult.error || privateResult.status].filter(Boolean).join('; ').slice(0, 1000)
+    );
+  }
+}
+
 async function saveDraft({ event, account, draft, status, model, error = null }) {
   await pool.query(
     `INSERT INTO comment_agent."PersonaReplyDraft"
@@ -549,7 +752,176 @@ async function updateEvent(commentId, status, error = null) {
   );
 }
 
+async function saveInboundMessage(event, account) {
+  const eventTime = new Date(Number(event.timestamp));
+  const result = await pool.query(
+    `INSERT INTO comment_agent."MessagingInboundEvent"
+      ("messageId", platform, "integrationId", "metaAccountId", "senderId", "recipientId",
+       "messageText", "eventTimestamp", "rawEvent")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT ("messageId") DO NOTHING
+     RETURNING "messageId"`,
+    [
+      event.messageId,
+      event.platform,
+      account.integrationId,
+      account.metaAccountId,
+      event.senderId,
+      event.recipientId || null,
+      event.text || null,
+      eventTime,
+      event.raw,
+    ]
+  );
+  return result.rowCount === 1;
+}
+
+async function updateInboundMessage(messageId, status, error = null) {
+  await pool.query(
+    `UPDATE comment_agent."MessagingInboundEvent"
+        SET status=$2, error=$3, "processedAt"=NOW()
+      WHERE "messageId"=$1`,
+    [messageId, status, error]
+  );
+}
+
+async function processInboundMessage(event) {
+  const account = accountsByMetaId.get(event.metaAccountId);
+  if (!account || !isChayaSalesAccount(account)) return;
+  if (!(await saveInboundMessage(event, account))) return;
+  if (!isYesOptIn(event.text)) {
+    await updateInboundMessage(event.messageId, 'ignored_not_yes');
+    return;
+  }
+
+  const sourceResult = await pool.query(
+    `SELECT "commentId"
+       FROM comment_agent."PrivateReplyLog"
+      WHERE "integrationId"=$1 AND status='sent'
+        AND ("metaRecipientId"=$2 OR "commentSenderId"=$2)
+      ORDER BY "sentAt" DESC LIMIT 1`,
+    [account.integrationId, event.senderId]
+  );
+  const sourceCommentId = sourceResult.rows[0]?.commentId || null;
+  if (!sourceCommentId) {
+    await updateInboundMessage(event.messageId, 'ignored_unlinked_yes');
+    return;
+  }
+
+  const eventTime = new Date(Number(event.timestamp));
+  await pool.query(
+    `INSERT INTO comment_agent."MessagingOptIn"
+      (platform, "integrationId", "metaAccountId", "recipientId", "sourceCommentId",
+       "sourceMessageId", "localOptInAt", "lastInboundAt", "marketingStatus")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$7,'local_yes_only')
+     ON CONFLICT ("integrationId", "recipientId") DO UPDATE
+       SET "sourceCommentId"=EXCLUDED."sourceCommentId",
+           "sourceMessageId"=EXCLUDED."sourceMessageId",
+           "localOptInAt"=EXCLUDED."localOptInAt",
+           "lastInboundAt"=EXCLUDED."lastInboundAt",
+           "updatedAt"=NOW()`,
+    [
+      event.platform,
+      account.integrationId,
+      account.metaAccountId,
+      event.senderId,
+      sourceCommentId,
+      event.messageId,
+      eventTime,
+    ]
+  );
+
+  if (!isWithinStandardMessagingWindow(event.timestamp)) {
+    await updateInboundMessage(event.messageId, 'optin_recorded_window_closed');
+    return;
+  }
+
+  try {
+    await sendStandardMessage(event, account, CHAYA_YES_THANK_YOU);
+    await pool.query(
+      `UPDATE comment_agent."MessagingOptIn"
+          SET "thankYouSentAt"=NOW(), "updatedAt"=NOW()
+        WHERE "integrationId"=$1 AND "recipientId"=$2`,
+      [account.integrationId, event.senderId]
+    );
+    await updateInboundMessage(event.messageId, 'optin_recorded_thanked');
+  } catch (error) {
+    await updateInboundMessage(
+      event.messageId,
+      'optin_recorded_thank_failed',
+      String(error.message).slice(0, 1000)
+    );
+  }
+}
+
+async function processMarketingOptIn(event) {
+  const account = accountsByMetaId.get(event.metaAccountId);
+  if (!account || !isChayaSalesAccount(account) || !event.marketingToken) return;
+  const eventTime = new Date(Number(event.timestamp));
+  await pool.query(
+    `INSERT INTO comment_agent."MessagingOptIn"
+      (platform, "integrationId", "metaAccountId", "recipientId", "lastInboundAt",
+       "metaMarketingToken", "metaMarketingOptInAt", "marketingStatus")
+     VALUES ($1,$2,$3,$4,$5,$6,$5,'meta_token_active')
+     ON CONFLICT ("integrationId", "recipientId") DO UPDATE
+       SET "lastInboundAt"=EXCLUDED."lastInboundAt",
+           "metaMarketingToken"=EXCLUDED."metaMarketingToken",
+           "metaMarketingOptInAt"=EXCLUDED."metaMarketingOptInAt",
+           "marketingStatus"='meta_token_active', "updatedAt"=NOW()`,
+    [
+      event.platform,
+      account.integrationId,
+      account.metaAccountId,
+      event.senderId,
+      eventTime,
+      event.marketingToken,
+    ]
+  );
+}
+
+async function dailySalesReport(date, timeZone = SALES_REPORT_TIME_ZONE) {
+  const { rows } = await pool.query(
+    `WITH bounds AS (
+       SELECT ($1::date::timestamp AT TIME ZONE $2) AS start_at,
+              (($1::date + 1)::timestamp AT TIME ZONE $2) AS end_at
+     )
+     SELECT
+       (SELECT COUNT(*)::int
+          FROM comment_agent."CommentAgentEvent", bounds
+         WHERE persona='chaya' AND status LIKE 'replied_%'
+           AND "processedAt">=start_at AND "processedAt"<end_at) AS "commentsAnswered",
+       (SELECT COUNT(*)::int
+          FROM comment_agent."PrivateReplyLog", bounds
+         WHERE status='sent' AND "sentAt">=start_at AND "sentAt"<end_at) AS "privateRepliesSent",
+       (SELECT COUNT(*)::int
+          FROM comment_agent."MessagingOptIn", bounds
+         WHERE "localOptInAt">=start_at AND "localOptInAt"<end_at) AS "yesOptIns",
+       (SELECT COUNT(*)::int
+          FROM comment_agent."MessagingOptIn"
+         WHERE "marketingStatus"='meta_token_active' AND "metaMarketingToken" IS NOT NULL)
+         AS "metaMarketingTokensActive"`,
+    [date, timeZone]
+  );
+  return {
+    date,
+    timeZone,
+    ...rows[0],
+    clicks: {
+      measurable: false,
+      count: null,
+      reason: 'The approved direct destination URL does not send click events to this service.',
+    },
+    messagingCompliance: {
+      localYesRecorded: true,
+      metaMarketingTokenRequiredOutside24Hours: true,
+      outside24HourSendsEnabled: false,
+    },
+  };
+}
+
 async function processEvent(event) {
+  if (event.kind === 'message') return processInboundMessage(event);
+  if (event.kind === 'marketing_optin') return processMarketingOptIn(event);
   const account = accountsByMetaId.get(event.metaAccountId);
   if (!account || account.platform !== event.platform) return;
   if (event.senderId && event.senderId === event.metaAccountId) return;
@@ -573,6 +945,14 @@ async function processEvent(event) {
       }
       if (relationship.engagement === 'manual_review') {
         await updateEvent(event.commentId, 'needs_review_client_rule');
+        return;
+      }
+      if (
+        CHAYA_SALES_PRIVATE_REPLIES_ENABLED &&
+        isChayaSalesAccount(account) &&
+        isChayaSalesTrigger(event.text)
+      ) {
+        await processChayaSalesComment(event, account);
         return;
       }
       const promotion = chayaReels33Decision({
@@ -726,6 +1106,15 @@ const server = http.createServer(async (request, response) => {
       mode: REPLY_MODE,
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
       commentPolicy: { aiReferences: 'delete_no_reply' },
+      chayaSalesPrivateReplies: {
+        enabled: CHAYA_SALES_PRIVATE_REPLIES_ENABLED,
+        facebookPageId: CHAYA_FACEBOOK_PAGE_ID,
+        instagramAccountId: CHAYA_INSTAGRAM_ACCOUNT_ID,
+        rateLimitPerMinute: PRIVATE_REPLY_PER_MINUTE,
+        rateLimitPerDay: PRIVATE_REPLY_PER_DAY,
+        metaMarketingTokenRequiredOutside24Hours: true,
+        outside24HourSendsEnabled: false,
+      },
       clientDirectory: clientDirectory.status(),
       tiktokScheduler: tiktokSchedulerSummary,
       subscriptions: subscriptionSummary,
@@ -792,6 +1181,50 @@ const server = http.createServer(async (request, response) => {
          FROM comment_agent."MetaAccountSubscription" ORDER BY persona, platform`
     );
     return sendJson(response, 200, { accounts: rows });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/admin/private-replies') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    const { rows } = await pool.query(
+      `SELECT "commentId", platform, "integrationId", "metaAccountId", "postId",
+              "commentSenderId", "metaRecipientId", "openingVariant", status,
+              "metaMessageId", error, "attemptedAt", "sentAt", "createdAt"
+         FROM comment_agent."PrivateReplyLog"
+        ORDER BY "createdAt" DESC LIMIT 500`
+    );
+    return sendJson(response, 200, { privateReplies: rows });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/admin/messaging-opt-ins') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    const { rows } = await pool.query(
+      `SELECT platform, "integrationId", "metaAccountId", "recipientId", "sourceCommentId",
+              "sourceMessageId", "localOptInAt", "lastInboundAt", "thankYouSentAt",
+              "metaMarketingOptInAt", "marketingStatus",
+              ("metaMarketingToken" IS NOT NULL) AS "hasMetaMarketingToken",
+              "createdAt", "updatedAt"
+         FROM comment_agent."MessagingOptIn"
+        ORDER BY "updatedAt" DESC LIMIT 500`
+    );
+    return sendJson(response, 200, { optIns: rows });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/admin/daily-sales-report') {
+    if (!isAdmin(request)) return sendJson(response, 401, { error: 'Unauthorized' });
+    const requestedDate = url.searchParams.get('date') || new Intl.DateTimeFormat('en-CA', {
+      timeZone: SALES_REPORT_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      return sendJson(response, 400, { error: 'date must be YYYY-MM-DD' });
+    }
+    try {
+      return sendJson(response, 200, await dailySalesReport(requestedDate));
+    } catch (error) {
+      return sendJson(response, 400, { error: String(error.message).slice(0, 1000) });
+    }
   }
 
   if (request.method === 'POST' && url.pathname === '/admin/tiktok/schedule') {

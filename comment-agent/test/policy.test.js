@@ -75,6 +75,12 @@ test('uses app-level Instagram webhooks and account-level Facebook subscriptions
     host: 'graph.facebook.com',
     target: '123%2F456',
   });
+  assert.deepEqual(metaSubscriptionStrategy('facebook', '123/456', { includeMessaging: true }), {
+    mode: 'account_level',
+    fields: ['feed', 'messages', 'messaging_optins'],
+    host: 'graph.facebook.com',
+    target: '123%2F456',
+  });
   assert.throws(
     () => metaSubscriptionStrategy('tiktok', 'not-meta'),
     /Unsupported Meta subscription platform/

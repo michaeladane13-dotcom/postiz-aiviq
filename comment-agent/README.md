@@ -35,6 +35,11 @@ Chaya, Ren and David Facebook/Instagram integrations.
 - `OPENAI_API_KEY` (optional; without it, moderation runs but drafts are marked blocked)
 - `OPENAI_MODEL` (optional; defaults to `gpt-5-mini`)
 - `REPLY_MODE` (optional; `shadow` by default, or `limited_live` for curated replies)
+- `CHAYA_SALES_PRIVATE_REPLIES_ENABLED` (optional; must be exactly `true` to enable
+  the approved Chaya comment-to-private-message sales flow)
+- `PRIVATE_REPLY_PER_MINUTE` (optional; conservative default `10` per integration)
+- `PRIVATE_REPLY_PER_DAY` (optional; conservative default `200` per integration)
+- `SALES_REPORT_TIME_ZONE` (optional; defaults to `America/Vancouver`)
 - `CLIENT_HANDOVER_GITHUB_TOKEN` (fine-grained, read-only contents access to the
   private `chaya-client-handover` repository)
 - `CLIENT_HANDOVER_REPO` (optional; defaults to
@@ -50,3 +55,10 @@ integration route; callers cannot assign a contact to a different persona.
 
 The five Chaya `REELS33` promotion-specific comment rules and human-review
 boundaries are documented in [REELS33-HANDOVER.md](REELS33-HANDOVER.md).
+
+The protected `/admin/private-replies`, `/admin/messaging-opt-ins`, and
+`/admin/daily-sales-report` endpoints provide delivery logs, opt-in records, and
+daily aggregate reporting. A typed `YES` is recorded locally, but it is not treated
+as a Meta Marketing Messages token. This service does not send outside the standard
+24-hour window unless Meta has supplied its own opt-in token, and outside-window
+sends remain disabled.

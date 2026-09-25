@@ -200,17 +200,17 @@ export function routeIntegration(integrationId) {
   return ACCOUNT_ROUTES[integrationId] || null;
 }
 
-export function metaSubscriptionStrategy(platform, metaAccountId) {
+export function metaSubscriptionStrategy(platform, metaAccountId, { includeMessaging = false } = {}) {
   if (platform === 'instagram') {
     return Object.freeze({
       mode: 'app_level',
-      fields: Object.freeze(['comments']),
+      fields: Object.freeze(includeMessaging ? ['comments', 'messages', 'messaging_optins'] : ['comments']),
     });
   }
   if (platform === 'facebook') {
     return Object.freeze({
       mode: 'account_level',
-      fields: Object.freeze(['feed']),
+      fields: Object.freeze(includeMessaging ? ['feed', 'messages', 'messaging_optins'] : ['feed']),
       host: 'graph.facebook.com',
       target: encodeURIComponent(String(metaAccountId)),
     });
