@@ -1,0 +1,13 @@
+[Unit]
+Description=Postiz boot-time clock sanity gate
+Wants=network-online.target
+After=network-online.target systemd-timesyncd.service
+Before=postiz-safe-start.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/postiz/postiz_clock_sanity.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

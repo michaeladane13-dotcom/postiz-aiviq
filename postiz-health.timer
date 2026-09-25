@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Postiz daily health check
+
+[Timer]
+OnCalendar=*-*-* 05:15:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
