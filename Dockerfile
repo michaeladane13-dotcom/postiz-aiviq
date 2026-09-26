@@ -33,18 +33,20 @@ RUN set -eux; \
     test -n "$instagram_files"; \
     for file in $facebook_files; do \
       sed -i \
-        -e "s/'pages_manage_engagement'/'pages_manage_engagement','pages_manage_metadata','pages_read_user_content'/g" \
-        -e 's/"pages_manage_engagement"/"pages_manage_engagement","pages_manage_metadata","pages_read_user_content"/g' \
+        -e "s/'pages_manage_engagement'/'pages_manage_engagement','pages_manage_metadata','pages_read_user_content','pages_messaging'/g" \
+        -e 's/"pages_manage_engagement"/"pages_manage_engagement","pages_manage_metadata","pages_read_user_content","pages_messaging"/g' \
         "$file"; \
       grep -q 'pages_manage_metadata' "$file"; \
       grep -q 'pages_read_user_content' "$file"; \
+      grep -q 'pages_messaging' "$file"; \
     done; \
     for file in $instagram_files; do \
       sed -i \
-        -e "s/'instagram_manage_comments'/'instagram_manage_comments','pages_manage_metadata'/g" \
-        -e 's/"instagram_manage_comments"/"instagram_manage_comments","pages_manage_metadata"/g' \
+        -e "s/'instagram_manage_comments'/'instagram_manage_comments','pages_manage_metadata','instagram_manage_messages'/g" \
+        -e 's/"instagram_manage_comments"/"instagram_manage_comments","pages_manage_metadata","instagram_manage_messages"/g' \
         "$file"; \
       grep -q 'pages_manage_metadata' "$file"; \
+      grep -q 'instagram_manage_messages' "$file"; \
     done
 
 # A lost local profile image must not abort token refresh before a TikTok post.
