@@ -1434,7 +1434,10 @@ const server = http.createServer(async (request, response) => {
       .filter((account) =>
         account.platform === 'instagram' &&
         !account.messagingEndpointId &&
-        (META_INBOX_RESPONDER_ENABLED || isChayaSalesAccount(account))
+        (
+          META_INBOX_RESPONDER_ENABLED ||
+          (CHAYA_SALES_PRIVATE_REPLIES_ENABLED && isChayaSalesAccount(account))
+        )
       )
       .map((account) => ({
         integrationId: account.integrationId,
