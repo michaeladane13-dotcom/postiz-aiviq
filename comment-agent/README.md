@@ -16,16 +16,16 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
   clearly positive interactions can establish a returning regular; friend-like voice
   is used only for a manually confirmed contact on that persona's account.
 - A private, public-safe client directory is refreshed from GitHub at startup and
-  every eight hours. Social aliases are matched exactly after case-folding, trimming
+  every four hours. Social aliases are matched exactly after case-folding, trimming
   and removing one leading `@`; fuzzy matching is intentionally forbidden.
 - Public replies use only `social-public-profiles.json` and never receive the
   handover repository's confidential README.
-- The inbox responder refreshes the confidential handover README every eight hours.
+- The inbox responder refreshes the confidential handover README every four hours.
   It can use only the section belonging to an exact matched Chaya identity, only in
   a private DM, and only as background for tone and continuity. Unresolved identities,
   public replies, and the Ren, Nadja and David inboxes never receive that context.
 - A separate public-safe brand knowledge file is refreshed from GitHub at startup
-  and every eight hours. It contains exactly Chaya, Ren, Nadja and David, plus safe
+  and every four hours. It contains exactly Chaya, Ren, Nadja and David, plus safe
   operating facts sourced from Chaya Ops. The agent then refreshes an allowlisted
   set of pages on each brand's official website and extracts only page metadata and
   structured product or service facts. It never places raw webpage body text in a

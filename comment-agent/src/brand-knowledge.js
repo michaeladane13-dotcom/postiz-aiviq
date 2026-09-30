@@ -280,7 +280,7 @@ export class GitHubBrandKnowledge {
     return {
       ...this.state,
       warnings: [...this.state.warnings],
-      refreshHours: 8,
+      refreshHours: 4,
       approvedPersonas: [...APPROVED_PERSONAS],
     };
   }

@@ -71,7 +71,7 @@ const CLIENT_BRAND_KNOWLEDGE_PATH =
   process.env.CLIENT_BRAND_KNOWLEDGE_PATH || 'social-brand-knowledge.json';
 const CLIENT_HANDOVER_REF = process.env.CLIENT_HANDOVER_REF || 'main';
 const CLIENT_HANDOVER_GITHUB_TOKEN = process.env.CLIENT_HANDOVER_GITHUB_TOKEN || '';
-const CLIENT_HANDOVER_SYNC_MS = 8 * 60 * 60 * 1000;
+const CLIENT_HANDOVER_SYNC_MS = 4 * 60 * 60 * 1000;
 const TIKTOK_CHANNEL_REFRESH_MS = 24 * 60 * 60 * 1000;
 const TIKTOK_RETRY_POLL_MS = 15 * 60 * 1000;
 const clientDirectory = new GitHubClientDirectory({

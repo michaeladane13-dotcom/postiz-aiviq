@@ -96,4 +96,5 @@ test('refreshes GitHub plus official sites and keeps every persona context isola
   assert.equal(knowledge.contextFor('daniel'), '');
   assert.equal(knowledge.status().ok, true);
   assert.equal(knowledge.status().profilesLoaded, 4);
+  assert.equal(knowledge.status().refreshHours, 4);
 });
