@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { Pool } from 'pg';
 import { BufferApi } from './buffer.js';
+import { GitHubBrandKnowledge } from './brand-knowledge.js';
 import { GitHubClientDirectory } from './client-directory.js';
 import { GitHubHandoverKnowledge } from './handover-knowledge.js';
 import {
@@ -61,6 +62,8 @@ const CLIENT_HANDOVER_REPO = process.env.CLIENT_HANDOVER_REPO ||
 const CLIENT_HANDOVER_PATH = process.env.CLIENT_HANDOVER_PATH || 'social-public-profiles.json';
 const CLIENT_HANDOVER_KNOWLEDGE_PATH =
   process.env.CLIENT_HANDOVER_KNOWLEDGE_PATH || 'README.md';
+const CLIENT_BRAND_KNOWLEDGE_PATH =
+  process.env.CLIENT_BRAND_KNOWLEDGE_PATH || 'social-brand-knowledge.json';
 const CLIENT_HANDOVER_REF = process.env.CLIENT_HANDOVER_REF || 'main';
 const CLIENT_HANDOVER_GITHUB_TOKEN = process.env.CLIENT_HANDOVER_GITHUB_TOKEN || '';
 const CLIENT_HANDOVER_SYNC_MS = 8 * 60 * 60 * 1000;
@@ -73,6 +76,12 @@ const clientDirectory = new GitHubClientDirectory({
 const handoverKnowledge = new GitHubHandoverKnowledge({
   repository: CLIENT_HANDOVER_REPO,
   path: CLIENT_HANDOVER_KNOWLEDGE_PATH,
+  ref: CLIENT_HANDOVER_REF,
+  token: CLIENT_HANDOVER_GITHUB_TOKEN,
+});
+const brandKnowledge = new GitHubBrandKnowledge({
+  repository: CLIENT_HANDOVER_REPO,
+  path: CLIENT_BRAND_KNOWLEDGE_PATH,
   ref: CLIENT_HANDOVER_REF,
   token: CLIENT_HANDOVER_GITHUB_TOKEN,
 });
@@ -1100,7 +1109,9 @@ async function processInboxReply(event, account, senderProfile) {
     return;
   }
 
-  let reply = decision.action === 'template'
+  let reply = (
+    decision.action === 'template' && decision.category !== 'reading_inquiry'
+  )
     ? buildSafeInboxTemplateReply(account.persona, decision.category)
     : null;
   let model = reply ? 'curated-inbox-v1' : null;
@@ -1113,6 +1124,7 @@ async function processInboxReply(event, account, senderProfile) {
       message: event.text,
       senderName: senderProfile.name || senderProfile.username,
       recentHistory,
+      brandContext: brandKnowledge.contextFor(account.persona),
       privateClientContext:
         account.persona === 'chaya' && directoryProfile
           ? handoverKnowledge.contextFor(directoryProfile)
@@ -1121,6 +1133,10 @@ async function processInboxReply(event, account, senderProfile) {
     reply = generated.reply;
     model = generated.model;
     generationError = generated.error;
+  }
+  if (!reply && decision.category === 'reading_inquiry') {
+    reply = buildSafeInboxTemplateReply(account.persona, decision.category);
+    model = reply ? 'curated-inbox-fallback-v1' : model;
   }
   if (!reply) {
     await updateInboxReply(event.messageId, 'needs_review_no_safe_reply', {
@@ -1373,6 +1389,7 @@ async function processEvent(event) {
         relationship: relationship.relationship,
         relationshipNotes: relationship.notes,
         recentHistory: relationship.recentHistory,
+        brandContext: brandKnowledge.contextFor(account.persona, { publicReply: true }),
       });
       await saveDraft({
         event,
@@ -1446,9 +1463,11 @@ const server = http.createServer(async (request, response) => {
       }));
     const messagingFeatureEnabled =
       META_INBOX_RESPONDER_ENABLED || CHAYA_SALES_PRIVATE_REPLIES_ENABLED;
+    const brandKnowledgeStatus = brandKnowledge.status();
     const ok =
       databaseSummary.ready &&
       accountsByMetaId.size === expectedAccounts &&
+      brandKnowledgeStatus.ok &&
       (!messagingFeatureEnabled || subscriptionSummary.failed === 0) &&
       (!messagingFeatureEnabled || messagingEndpointErrors.length === 0);
     sendJson(response, ok ? 200 : 503, {
@@ -1481,6 +1500,7 @@ const server = http.createServer(async (request, response) => {
       },
       clientDirectory: clientDirectory.status(),
       handoverKnowledge: handoverKnowledge.status(),
+      brandKnowledge: brandKnowledgeStatus,
       tiktokScheduler: tiktokSchedulerSummary,
       subscriptions: subscriptionSummary,
       database: databaseSummary,
@@ -1697,6 +1717,9 @@ await clientDirectory.sync().catch((error) => {
 await handoverKnowledge.sync().catch((error) => {
   console.error('handover_knowledge_sync_failed', error.message);
 });
+await brandKnowledge.sync().catch((error) => {
+  console.error('brand_knowledge_sync_failed', error.message);
+});
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
@@ -1719,6 +1742,10 @@ setInterval(() => {
 
 setInterval(() => {
   handoverKnowledge.sync().catch((error) => console.error('handover_knowledge_sync_failed', error.message));
+}, CLIENT_HANDOVER_SYNC_MS).unref();
+
+setInterval(() => {
+  brandKnowledge.sync().catch((error) => console.error('brand_knowledge_sync_failed', error.message));
 }, CLIENT_HANDOVER_SYNC_MS).unref();
 
 export { extractEvents };

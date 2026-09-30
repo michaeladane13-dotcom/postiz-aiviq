@@ -38,9 +38,12 @@ test('prompt isolates exact private context and forbids introducing it', () => {
     displayName: 'Chaya',
     voice: 'Warm and direct.',
     message: 'Hello',
+    brandContext: 'Active brand account: chaya. Official booking page: https://chayathemedium.org/shop',
     privateClientContext: 'PRIVATE CONTEXT: exact match only',
   });
   assert.match(prompt, /exact match only/);
   assert.match(prompt, /Never reveal it/);
+  assert.match(prompt, /Official booking page/);
+  assert.match(prompt, /Never borrow a fact/);
   assert.match(prompt, /Never use an em dash/);
 });

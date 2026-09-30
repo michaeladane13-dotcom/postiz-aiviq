@@ -24,6 +24,16 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
   It can use only the section belonging to an exact matched Chaya identity, only in
   a private DM, and only as background for tone and continuity. Unresolved identities,
   public replies, and the Ren, Nadja and David inboxes never receive that context.
+- A separate public-safe brand knowledge file is refreshed from GitHub at startup
+  and every eight hours. It contains exactly Chaya, Ren, Nadja and David, plus safe
+  operating facts sourced from Chaya Ops. The agent then refreshes an allowlisted
+  set of pages on each brand's official website and extracts only page metadata and
+  structured product or service facts. It never places raw webpage body text in a
+  model prompt.
+- Brand knowledge is account-isolated. A reply on one persona's integration cannot
+  receive another persona's facts, links, services or offers. Prices are stripped
+  from public-comment context. Inbox replies may use a price only when the latest
+  official structured website data explicitly contains it.
 - Inbox handling is locked to the exact Chaya Facebook and Instagram, Ren Facebook
   and Instagram, Nadja Instagram, and David Facebook integrations. The similarly
   named Nadia Facebook Page is not included.
@@ -60,6 +70,8 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
   `michaeladane13-dotcom/chaya-client-handover`)
 - `CLIENT_HANDOVER_PATH` (optional; defaults to `social-public-profiles.json`)
 - `CLIENT_HANDOVER_KNOWLEDGE_PATH` (optional; defaults to `README.md`)
+- `CLIENT_BRAND_KNOWLEDGE_PATH` (optional; defaults to
+  `social-brand-knowledge.json`)
 - `CLIENT_HANDOVER_REF` (optional; defaults to `main`)
 
 The Meta callback URL is `https://<service-domain>/webhooks/meta`.
