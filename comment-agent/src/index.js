@@ -1788,6 +1788,9 @@ const server = http.createServer(async (request, response) => {
 });
 
 await refreshMetaAccountState();
+await dailyReelPublisher.probeIntegrations().catch((error) => {
+  console.error('daily_reel_integration_probe_failed', error.message);
+});
 await syncTikTokScheduler();
 await clientDirectory.sync().catch((error) => {
   console.error('client_directory_sync_failed', error.message);

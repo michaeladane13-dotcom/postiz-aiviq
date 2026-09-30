@@ -164,6 +164,26 @@ export class DailyReelPublisher {
     return { accountId: String(row.internalId), token: String(row.token).split('___')[0] };
   }
 
+  async probeIntegrations() {
+    const failures = [];
+    let ready = 0;
+    let expected = 0;
+    for (const [brand, routes] of Object.entries(DAILY_REEL_ROUTES)) {
+      for (const [platform, id] of Object.entries(routes)) {
+        expected += 1;
+        try {
+          const account = await this.integration(id, platform);
+          await this.graph(account.accountId, account.token, { fields: 'id' });
+          ready += 1;
+        } catch (error) {
+          failures.push({ brand, platform, error: String(error.message).slice(0, 250) });
+        }
+      }
+    }
+    this.status.destinations = { ready, expected, failures };
+    return this.status.destinations;
+  }
+
   async reserve(record, platform, integrationId, caption, day) {
     let { rows } = await this.pool.query(
       `INSERT INTO comment_agent."DailyReelPublication"
@@ -274,27 +294,32 @@ export class DailyReelPublisher {
 
   async facebook(record, integrationId, account, caption, bytes) {
     await this.update(record, integrationId, 'starting');
-    const started = await this.graph(`${account.accountId}/video_reels`, account.token, {
+    const started = await this.graph('me/video_reels', account.token, {
       method: 'POST', body: new URLSearchParams({ upload_phase: 'start' }),
     });
     if (!started.video_id || !started.upload_url) throw new Error('Facebook did not return a Reel upload session');
     await this.update(record, integrationId, 'container_created', { containerId: started.video_id });
     await this.upload(started.upload_url, account.token, bytes);
     await this.update(record, integrationId, 'publishing');
-    await this.graph(`${account.accountId}/video_reels`, account.token, {
+    await this.graph('me/video_reels', account.token, {
       method: 'POST', body: new URLSearchParams({
         upload_phase: 'finish', video_id: String(started.video_id), video_state: 'PUBLISHED', description: caption,
       }),
     });
     await this.update(record, integrationId, 'published_unverified', { mediaId: started.video_id });
-    const media = await this.graph(started.video_id, account.token, { fields: 'id,status,permalink_url' });
-    const state = media.status?.video_status || '';
-    if (!['ready', 'published'].includes(String(state).toLowerCase()) && !media.permalink_url) {
-      throw new Error('Facebook Reel accepted but not yet verified live');
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const media = await this.graph(started.video_id, account.token, { fields: 'id,status,permalink_url' });
+      const state = String(media.status?.video_status || '').toLowerCase();
+      if (state === 'error' || state === 'failed') throw new Error(`Facebook Reel processing ${state}`);
+      if (['ready', 'published'].includes(state) || media.permalink_url) {
+        await this.update(record, integrationId, 'verified', {
+          permalink: media.permalink_url || `https://www.facebook.com/reel/${started.video_id}`,
+        });
+        return;
+      }
+      if (attempt < 39) await this.sleep(3000);
     }
-    await this.update(record, integrationId, 'verified', {
-      permalink: media.permalink_url || `https://www.facebook.com/reel/${started.video_id}`,
-    });
+    throw new Error('Facebook Reel accepted but is still processing; no duplicate upload was attempted');
   }
 
   async run() {
