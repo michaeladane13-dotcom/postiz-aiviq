@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { BufferApi } from './buffer.js';
 import { GitHubBrandKnowledge } from './brand-knowledge.js';
 import { GitHubClientDirectory } from './client-directory.js';
+import { DailyReelPublisher } from './daily-reels.js';
 import { GitHubHandoverKnowledge } from './handover-knowledge.js';
 import {
   buildInboxReplyPrompt,
@@ -114,6 +115,10 @@ const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
 });
+const dailyReelPublisher = new DailyReelPublisher({
+  pool, token: CLIENT_HANDOVER_GITHUB_TOKEN, graphVersion: GRAPH_VERSION,
+});
+const DAILY_REELS_ENABLED = process.env.DAILY_REELS_ENABLED === 'true';
 
 let accountsByMetaId = new Map();
 let subscriptionSummary = {
@@ -1549,6 +1554,7 @@ const server = http.createServer(async (request, response) => {
       clientDirectory: clientDirectory.status(),
       handoverKnowledge: handoverKnowledge.status(),
       brandKnowledge: brandKnowledgeStatus,
+      dailyReels: { enabled: DAILY_REELS_ENABLED, ...dailyReelPublisher.status },
       tiktokScheduler: tiktokSchedulerSummary,
       subscriptions: subscriptionSummary,
       database: databaseSummary,
@@ -1768,6 +1774,8 @@ await handoverKnowledge.sync().catch((error) => {
 await brandKnowledge.sync().catch((error) => {
   console.error('brand_knowledge_sync_failed', error.message);
 });
+await dailyReelPublisher.probe();
+if (DAILY_REELS_ENABLED) dailyReelPublisher.run().catch((error) => console.error('daily_reel_failed', error.message));
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
@@ -1795,5 +1803,9 @@ setInterval(() => {
 setInterval(() => {
   brandKnowledge.sync().catch((error) => console.error('brand_knowledge_sync_failed', error.message));
 }, CLIENT_HANDOVER_SYNC_MS).unref();
+
+if (DAILY_REELS_ENABLED) setInterval(() => {
+  dailyReelPublisher.run().catch((error) => console.error('daily_reel_failed', error.message));
+}, 30 * 60 * 1000).unref();
 
 export { extractEvents };
