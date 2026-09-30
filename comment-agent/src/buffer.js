@@ -26,6 +26,28 @@ function validateDueAt(value) {
   return dueAt.toISOString();
 }
 
+function responseHeader(response, name) {
+  return response?.headers && typeof response.headers.get === 'function'
+    ? response.headers.get(name)
+    : null;
+}
+
+export function parseBufferRateLimits(value) {
+  const raw = String(value || '').trim();
+  const windows = [...raw.matchAll(/"([^"]+)"\s*;\s*r=(\d+)\s*;\s*t=(\d+)/g)].map((match) => ({
+    policy: match[1],
+    remaining: Number(match[2]),
+    resetsInSeconds: Number(match[3]),
+  }));
+  return {
+    raw: raw || null,
+    windows,
+    minimumRemaining: windows.length
+      ? Math.min(...windows.map((window) => window.remaining))
+      : null,
+  };
+}
+
 export function validateTikTokSchedule(input) {
   const brand = normalizeBrand(input?.brand);
   const channelId = TIKTOK_CHANNELS[brand];
@@ -45,6 +67,15 @@ export class BufferApi {
   constructor(apiKey, fetchImpl = fetch) {
     this.apiKey = String(apiKey || '');
     this.fetch = fetchImpl;
+    this.lastRateLimits = parseBufferRateLimits('');
+  }
+
+  rateLimitStatus() {
+    return {
+      raw: this.lastRateLimits.raw,
+      windows: this.lastRateLimits.windows.map((window) => ({ ...window })),
+      minimumRemaining: this.lastRateLimits.minimumRemaining,
+    };
   }
 
   async graphql(query, variables = {}) {
@@ -58,8 +89,21 @@ export class BufferApi {
       },
       body: JSON.stringify({ query, variables }),
     });
-    const body = await response.json();
-    if (!response.ok) throw new Error(`Buffer returned HTTP ${response.status}`);
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    this.lastRateLimits = parseBufferRateLimits(responseHeader(response, 'ratelimit'));
+    if (!response.ok) {
+      const apiMessage = body?.errors?.map((item) => item.message).filter(Boolean).join('; ');
+      const error = new Error(apiMessage || `Buffer returned HTTP ${response.status}`);
+      error.status = response.status;
+      error.retryAfterSeconds = Math.max(0, Number(responseHeader(response, 'retry-after') || 0));
+      error.rateLimitWindow = body?.errors?.find((item) => item.extensions?.window)?.extensions?.window || null;
+      throw error;
+    }
     if (body?.errors?.length) {
       throw new Error(body.errors.map((item) => item.message || String(item)).join('; '));
     }
@@ -95,24 +139,30 @@ export class BufferApi {
   }
 
   async connectedTikTokChannels() {
-    const accountData = await this.graphql(`
-      query BufferOrganizations { account { organizations { id } } }
-    `);
-    const organizations = accountData.account?.organizations || [];
-    const channels = [];
-    for (const organization of organizations) {
-      const data = await this.graphql(`
-        query BufferChannels($organizationId: OrganizationId!) {
-          channels(input: { organizationId: $organizationId }) {
-            id name displayName service
-          }
+    const data = await this.graphql(`
+      query ApprovedTikTokChannels(
+        $chaya: ChannelId!
+        $iris: ChannelId!
+        $ren: ChannelId!
+      ) {
+        chaya: channel(input: { id: $chaya }) {
+          id name displayName service isDisconnected isLocked
         }
-      `, { organizationId: organization.id });
-      channels.push(...(data.channels || []));
-    }
+        iris: channel(input: { id: $iris }) {
+          id name displayName service isDisconnected isLocked
+        }
+        ren: channel(input: { id: $ren }) {
+          id name displayName service isDisconnected isLocked
+        }
+      }
+    `, TIKTOK_CHANNELS);
+    const channels = [data.chaya, data.iris, data.ren].filter(Boolean);
     const approvedIds = new Set(Object.values(TIKTOK_CHANNELS));
     return channels.filter((channel) =>
-      channel.service === 'tiktok' && approvedIds.has(channel.id)
+      channel.service === 'tiktok' &&
+      approvedIds.has(channel.id) &&
+      !channel.isDisconnected &&
+      !channel.isLocked
     );
   }
 

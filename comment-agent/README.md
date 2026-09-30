@@ -44,6 +44,10 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
 - Each approved Facebook Page and Instagram professional account is installed on the
   app automatically and retried every ten minutes if Meta reports a missing permission.
 - All received decisions and moderation results are logged in Postgres.
+- Buffer TikTok channel validation uses one combined GraphQL request, caches the
+  result for 24 hours, and honors Buffer's `Retry-After` header without repeatedly
+  consuming the API quota. Post creation is never automatically retried because
+  Buffer does not provide an idempotency key for that write.
 
 ## Required environment
 

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BufferApi, TIKTOK_CHANNELS, validateTikTokSchedule } from '../src/buffer.js';
+import {
+  BufferApi,
+  TIKTOK_CHANNELS,
+  parseBufferRateLimits,
+  validateTikTokSchedule,
+} from '../src/buffer.js';
 
 test('validates and routes known TikTok brands', () => {
   const schedule = validateTikTokSchedule({
@@ -45,22 +50,52 @@ test('creates an automatic custom-scheduled video post', async () => {
 });
 
 test('validates the three approved Buffer TikTok channels', async () => {
-  let call = 0;
-  const api = new BufferApi('secret', async () => {
-    call += 1;
+  let request;
+  let calls = 0;
+  const api = new BufferApi('secret', async (_url, options) => {
+    calls += 1;
+    request = JSON.parse(options.body);
     return {
       ok: true,
       async json() {
-        if (call === 1) return { data: { account: { organizations: [{ id: 'org-1' }] } } };
-        return { data: { channels: [
-          { id: TIKTOK_CHANNELS.chaya, name: 'chayamedium', service: 'tiktok' },
-          { id: TIKTOK_CHANNELS.iris, name: 'iris09852', service: 'tiktok' },
-          { id: TIKTOK_CHANNELS.ren, name: 'renlevymclarnon', service: 'tiktok' },
-          { id: 'ig-1', name: 'chaya', service: 'instagram' },
-        ] } };
+        return { data: {
+          chaya: { id: TIKTOK_CHANNELS.chaya, name: 'chayamedium', service: 'tiktok', isDisconnected: false, isLocked: false },
+          iris: { id: TIKTOK_CHANNELS.iris, name: 'iris09852', service: 'tiktok', isDisconnected: false, isLocked: false },
+          ren: { id: TIKTOK_CHANNELS.ren, name: 'renlevymclarnon', service: 'tiktok', isDisconnected: false, isLocked: false },
+        } };
       },
     };
   });
   const channels = await api.connectedTikTokChannels();
   assert.deepEqual(channels.map((channel) => channel.id), Object.values(TIKTOK_CHANNELS));
+  assert.equal(calls, 1);
+  assert.deepEqual(request.variables, TIKTOK_CHANNELS);
+  assert.match(request.query, /chaya: channel/);
+});
+
+test('parses Buffer quota windows and preserves Retry-After on a 429', async () => {
+  const limits = parseBufferRateLimits(
+    '"100-in-15min";r=12;t=500, "250-in-1day";r=0;t=7200'
+  );
+  assert.equal(limits.minimumRemaining, 0);
+  assert.equal(limits.windows[1].resetsInSeconds, 7200);
+
+  const api = new BufferApi('secret', async () => new Response(JSON.stringify({
+    errors: [{
+      message: 'Too many requests from this client. Please try again later.',
+      extensions: { code: 'RATE_LIMIT_EXCEEDED', window: '24h' },
+    }],
+  }), {
+    status: 429,
+    headers: {
+      'content-type': 'application/json',
+      'retry-after': '7200',
+      ratelimit: '"250-in-1day";r=0;t=7200',
+    },
+  }));
+  await assert.rejects(
+    api.connectedTikTokChannels(),
+    (error) => error.status === 429 && error.retryAfterSeconds === 7200 && error.rateLimitWindow === '24h'
+  );
+  assert.equal(api.rateLimitStatus().minimumRemaining, 0);
 });

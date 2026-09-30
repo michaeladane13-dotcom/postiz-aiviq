@@ -67,6 +67,8 @@ const CLIENT_BRAND_KNOWLEDGE_PATH =
 const CLIENT_HANDOVER_REF = process.env.CLIENT_HANDOVER_REF || 'main';
 const CLIENT_HANDOVER_GITHUB_TOKEN = process.env.CLIENT_HANDOVER_GITHUB_TOKEN || '';
 const CLIENT_HANDOVER_SYNC_MS = 8 * 60 * 60 * 1000;
+const TIKTOK_CHANNEL_REFRESH_MS = 24 * 60 * 60 * 1000;
+const TIKTOK_RETRY_POLL_MS = 15 * 60 * 1000;
 const clientDirectory = new GitHubClientDirectory({
   repository: CLIENT_HANDOVER_REPO,
   path: CLIENT_HANDOVER_PATH,
@@ -120,8 +122,13 @@ let tiktokSchedulerSummary = {
   configured: Boolean(BUFFER_API_KEY),
   validated: false,
   connectedChannels: 0,
+  lastCheckedAt: null,
+  lastSuccessfulAt: null,
+  nextCheckAt: null,
+  rateLimits: null,
   error: BUFFER_API_KEY ? null : 'BUFFER_API_KEY is not configured',
 };
+let tiktokNextCheckAtMs = 0;
 let databaseSummary = {
   ready: false,
   lastCheckedAt: null,
@@ -472,20 +479,39 @@ async function syncSubscriptions() {
 
 async function syncTikTokScheduler() {
   if (!BUFFER_API_KEY) return;
+  const now = Date.now();
+  if (now < tiktokNextCheckAtMs) return;
+  const checkedAt = new Date(now).toISOString();
   try {
     const channels = await bufferApi.connectedTikTokChannels();
+    tiktokNextCheckAtMs = now + TIKTOK_CHANNEL_REFRESH_MS;
     tiktokSchedulerSummary = {
       configured: true,
       validated: channels.length === 3,
       connectedChannels: channels.length,
+      lastCheckedAt: checkedAt,
+      lastSuccessfulAt: checkedAt,
+      nextCheckAt: new Date(tiktokNextCheckAtMs).toISOString(),
+      rateLimits: bufferApi.rateLimitStatus(),
       error: channels.length === 3 ? null : `Expected 3 approved TikTok channels, found ${channels.length}`,
     };
   } catch (error) {
+    const retrySeconds = error.status === 429
+      ? Math.max(60, Number(error.retryAfterSeconds || 0)) + 5
+      : 60 * 60;
+    tiktokNextCheckAtMs = now + retrySeconds * 1000;
+    const window = error.rateLimitWindow ? ` (${error.rateLimitWindow} window)` : '';
     tiktokSchedulerSummary = {
       configured: true,
       validated: false,
       connectedChannels: 0,
-      error: String(error.message).slice(0, 500),
+      lastCheckedAt: checkedAt,
+      lastSuccessfulAt: tiktokSchedulerSummary.lastSuccessfulAt,
+      nextCheckAt: new Date(tiktokNextCheckAtMs).toISOString(),
+      rateLimits: bufferApi.rateLimitStatus(),
+      error: error.status === 429
+        ? `Buffer rate limit reached${window}; automatic retry is scheduled after Retry-After.`
+        : String(error.message).slice(0, 500),
     };
   }
 }
@@ -1734,7 +1760,7 @@ setInterval(async () => {
 
 setInterval(() => {
   syncTikTokScheduler().catch((error) => console.error('tiktok_sync_failed', error.message));
-}, 5 * 60 * 1000).unref();
+}, TIKTOK_RETRY_POLL_MS).unref();
 
 setInterval(() => {
   clientDirectory.sync().catch((error) => console.error('client_directory_sync_failed', error.message));
