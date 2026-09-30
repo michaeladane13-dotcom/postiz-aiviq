@@ -165,13 +165,73 @@ export class DailyReelPublisher {
   }
 
   async reserve(record, platform, integrationId, caption, day) {
-    const { rows } = await this.pool.query(
+    let { rows } = await this.pool.query(
       `INSERT INTO comment_agent."DailyReelPublication"
          ("assetId", "integrationId", brand, platform, "scopeDay", status, "contentHash", caption)
        VALUES ($1,$2,$3,$4,$5,'reserved',$6,$7)
-       ON CONFLICT DO NOTHING RETURNING *`,
+      ON CONFLICT DO NOTHING RETURNING *`,
       [record.asset_id, integrationId, record.brand, platform, day, record.content_sha256, caption]);
+    if (!rows.length) {
+      // A failure before Meta assigned a container cannot have published a
+      // reel. This also recovers the common registry-before-release race.
+      ({ rows } = await this.pool.query(
+        `UPDATE comment_agent."DailyReelPublication"
+            SET status='reserved', error=NULL, "updatedAt"=NOW()
+          WHERE "assetId"=$1 AND "integrationId"=$2
+            AND status='needs_review' AND "containerId" IS NULL
+          RETURNING *`, [record.asset_id, integrationId]));
+    }
     return Boolean(rows.length);
+  }
+
+  async publishIncoming(record, shadow, bytes) {
+    if (!record || !DAILY_REEL_ROUTES[record.brand] || record.state !== 'READY') {
+      throw new Error('Unapproved or unready reel asset');
+    }
+    const day = record.asset_locator?.split('/').at(-1)?.slice(0, 10);
+    const today = vancouverDay(this.now());
+    const yesterday = vancouverDay(new Date(this.now().getTime() - 24 * 60 * 60 * 1000));
+    if (day !== today && day !== yesterday) throw new Error('Reel is outside the allowed daily delivery window');
+    if (shadow?.asset_id !== record.asset_id || shadow?.job_id !== record.job_id) {
+      throw new Error('Reel draft identity mismatch');
+    }
+    if (!Buffer.isBuffer(bytes) || bytes.length < 100_000 || bytes.length > 150_000_000 ||
+        crypto.createHash('sha256').update(bytes).digest('hex') !== record.content_sha256) {
+      throw new Error('Reel binary failed size/hash verification');
+    }
+    await this.migrate();
+    const caption = captionFor(record.brand, shadow);
+    const results = [];
+    for (const [platform, integrationId] of Object.entries(DAILY_REEL_ROUTES[record.brand])) {
+      const reserved = await this.reserve(record, platform, integrationId, caption, day);
+      if (!reserved) {
+        const { rows } = await this.pool.query(
+          `SELECT status, error FROM comment_agent."DailyReelPublication"
+            WHERE "assetId"=$1 AND "integrationId"=$2`, [record.asset_id, integrationId]);
+        results.push({ brand: record.brand, platform,
+          status: rows[0]?.status === 'verified' ? 'verified' : rows[0]?.status || 'conflict',
+          error: rows[0]?.error || undefined });
+        continue;
+      }
+      try {
+        const account = await this.integration(integrationId, platform);
+        if (platform === 'instagram') await this.instagram(record, integrationId, account, caption, bytes);
+        else await this.facebook(record, integrationId, account, caption, bytes);
+        results.push({ brand: record.brand, platform, status: 'verified' });
+      } catch (error) {
+        await this.update(record, integrationId, 'needs_review', { error: String(error.message).slice(0, 500) });
+        console.error('daily_reel_destination_failed', record.brand, platform, error.message);
+        results.push({ brand: record.brand, platform, status: 'needs_review', error: error.message });
+      }
+    }
+    this.status.lastCheckedAt = this.now().toISOString();
+    if (results.every((result) => result.status === 'verified')) {
+      this.status.lastSuccessAt = this.now().toISOString();
+      this.status.error = null;
+    } else {
+      this.status.error = 'One or more daily reel destinations need repair';
+    }
+    return results;
   }
 
   async update(record, integrationId, status, fields = {}) {
@@ -185,6 +245,7 @@ export class DailyReelPublisher {
   }
 
   async instagram(record, integrationId, account, caption, bytes) {
+    await this.update(record, integrationId, 'starting');
     const container = await this.graph(`${account.accountId}/media`, account.token, {
       method: 'POST', body: new URLSearchParams({ media_type: 'REELS', upload_type: 'resumable', caption }),
     });
@@ -212,6 +273,7 @@ export class DailyReelPublisher {
   }
 
   async facebook(record, integrationId, account, caption, bytes) {
+    await this.update(record, integrationId, 'starting');
     const started = await this.graph(`${account.accountId}/video_reels`, account.token, {
       method: 'POST', body: new URLSearchParams({ upload_phase: 'start' }),
     });

@@ -5,6 +5,7 @@ import { BufferApi } from './buffer.js';
 import { GitHubBrandKnowledge } from './brand-knowledge.js';
 import { GitHubClientDirectory } from './client-directory.js';
 import { DailyReelPublisher } from './daily-reels.js';
+import { verifyDailyReelOidc } from './github-oidc.js';
 import { GitHubHandoverKnowledge } from './handover-knowledge.js';
 import {
   buildInboxReplyPrompt,
@@ -116,9 +117,12 @@ const pool = new Pool({
   ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
 });
 const dailyReelPublisher = new DailyReelPublisher({
-  pool, token: CLIENT_HANDOVER_GITHUB_TOKEN, graphVersion: GRAPH_VERSION,
+  pool, token: '', graphVersion: GRAPH_VERSION,
 });
 const DAILY_REELS_ENABLED = process.env.DAILY_REELS_ENABLED === 'true';
+dailyReelPublisher.status = {
+  ...dailyReelPublisher.status, configured: true, deliveryMode: 'github_oidc', error: null,
+};
 
 let accountsByMetaId = new Map();
 let subscriptionSummary = {
@@ -1452,13 +1456,13 @@ async function processEvent(event) {
   await updateEvent(event.commentId, decision.action === 'review' ? 'needs_review' : 'ignored');
 }
 
-function readBody(request) {
+function readBody(request, maxBytes = 1_000_000) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     request.on('data', (chunk) => {
       size += chunk.length;
-      if (size > 1_000_000) {
+      if (size > maxBytes) {
         reject(new Error('Request body too large'));
         request.destroy();
         return;
@@ -1481,6 +1485,26 @@ function isAdmin(request) {
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
+
+  if (request.method === 'POST' && url.pathname === '/internal/daily-reel') {
+    if (!DAILY_REELS_ENABLED) return sendJson(response, 503, { error: 'Daily reel delivery is disabled' });
+    try {
+      await verifyDailyReelOidc(request.headers.authorization);
+    } catch {
+      return sendJson(response, 401, { error: 'Invalid workflow identity' });
+    }
+    try {
+      const encoded = String(request.headers['x-reel-metadata'] || '');
+      if (!encoded || encoded.length > 12_000) throw new Error('Missing or oversized reel metadata');
+      const { record, shadow } = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+      const bytes = await readBody(request, 150_000_000);
+      const results = await dailyReelPublisher.publishIncoming(record, shadow, bytes);
+      const ok = results.every((item) => item.status === 'verified');
+      return sendJson(response, ok ? 200 : 503, { ok, results });
+    } catch (error) {
+      return sendJson(response, 400, { error: String(error.message).slice(0, 500) });
+    }
+  }
 
   if (request.method === 'GET' && url.pathname === '/health') {
     const expectedAccounts = Object.keys(ACCOUNT_ROUTES).length;
@@ -1774,8 +1798,6 @@ await handoverKnowledge.sync().catch((error) => {
 await brandKnowledge.sync().catch((error) => {
   console.error('brand_knowledge_sync_failed', error.message);
 });
-await dailyReelPublisher.probe();
-if (DAILY_REELS_ENABLED) dailyReelPublisher.run().catch((error) => console.error('daily_reel_failed', error.message));
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
@@ -1804,8 +1826,5 @@ setInterval(() => {
   brandKnowledge.sync().catch((error) => console.error('brand_knowledge_sync_failed', error.message));
 }, CLIENT_HANDOVER_SYNC_MS).unref();
 
-if (DAILY_REELS_ENABLED) setInterval(() => {
-  dailyReelPublisher.run().catch((error) => console.error('daily_reel_failed', error.message));
-}, 30 * 60 * 1000).unref();
 
 export { extractEvents };
