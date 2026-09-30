@@ -28,8 +28,11 @@ promised question list in a private message, a human must follow up because
 the three starter questions are still sent publicly.
 
 The later approved sales flow applies across Chaya's Facebook Page and Instagram
-business account, not only these five reels. A whole-word `READ`, `READY`, `YES`,
-or `ME`, or a question about a reading, receives a price-free public acknowledgement
-and one private offer. The private reply is deduplicated by comment ID and logged
-with its post ID and Meta outcome. A private `YES` is recorded in the opt-in ledger
-and thanked once inside Meta's 24-hour messaging window.
+business account, not only these five reels, and across the exact approved Ren,
+Nadja and David integrations. David remains Facebook-only and Nadja remains
+Instagram-only. A whole-word `READ`, `READY`, `YES`, or `ME`, or a question about a
+reading, receives a price-free public acknowledgement and one private brand-specific
+offer when the commenter is not already a known regular. The private reply is
+deduplicated by comment ID and logged with its post ID and Meta outcome. A private
+`YES` is recorded in the opt-in ledger and thanked once inside Meta's 24-hour
+messaging window.

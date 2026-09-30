@@ -37,6 +37,10 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
 - Inbox handling is locked to the exact Chaya Facebook and Instagram, Ren Facebook
   and Instagram, Nadja Instagram, and David Facebook integrations. The similarly
   named Nadia Facebook Page is not included.
+- The comment sales flow uses that same six-integration allowlist. A new follower
+  who comments `READ`, `READY`, `YES`, `ME`, or asks about a reading receives a
+  price-free public acknowledgement and one private, brand-specific offer. Known
+  regulars continue through the normal relationship-aware reply path.
 - Safe greeting, gratitude and reading-inquiry templates can run without a model.
   Any other ordinary inbox message needs the configured model. Technology-identity
   questions, distress, medical/legal/financial subjects, orders and disputes go to
@@ -60,7 +64,9 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
 - `OPENAI_MODEL` (optional; defaults to `gpt-5-mini`)
 - `REPLY_MODE` (optional; `shadow` by default, or `limited_live` for curated replies)
 - `CHAYA_SALES_PRIVATE_REPLIES_ENABLED` (optional; must be exactly `true` to enable
-  the approved Chaya comment-to-private-message sales flow)
+  the approved comment-to-private-message sales flow when the newer flag is absent)
+- `SALES_PRIVATE_REPLIES_ENABLED` (optional; when present, must be exactly `true`
+  to enable the approved Chaya, Ren, Nadja and David sales flow)
 - `META_INBOX_RESPONDER_ENABLED` (optional; must be exactly `true` to enable the
   exact-account inbox responder)
 - `PRIVATE_REPLY_PER_MINUTE` (optional; conservative default `10` per integration)

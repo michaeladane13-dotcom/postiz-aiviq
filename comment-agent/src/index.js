@@ -27,13 +27,15 @@ import {
 import {
   CHAYA_FACEBOOK_PAGE_ID,
   CHAYA_INSTAGRAM_ACCOUNT_ID,
-  CHAYA_YES_THANK_YOU,
+  SALES_INTEGRATION_IDS,
   PrivateReplyRateLimiter,
-  buildChayaPrivateSalesReply,
-  buildChayaSalesPublicReply,
+  buildPrivateSalesReply,
+  buildSalesOptInThankYou,
+  buildSalesPublicReply,
   buildMetaPrivateReplyRequest,
-  isChayaSalesAccount,
-  isChayaSalesTrigger,
+  isSalesAccount,
+  isSalesEligibleRelationship,
+  isSalesTrigger,
   isWithinStandardMessagingWindow,
   isYesOptIn,
 } from './sales-private-replies.js';
@@ -49,6 +51,9 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const REPLY_MODE = process.env.REPLY_MODE || 'shadow';
 const CHAYA_SALES_PRIVATE_REPLIES_ENABLED =
   process.env.CHAYA_SALES_PRIVATE_REPLIES_ENABLED === 'true';
+const SALES_PRIVATE_REPLIES_ENABLED = process.env.SALES_PRIVATE_REPLIES_ENABLED
+  ? process.env.SALES_PRIVATE_REPLIES_ENABLED === 'true'
+  : CHAYA_SALES_PRIVATE_REPLIES_ENABLED;
 const META_INBOX_RESPONDER_ENABLED = process.env.META_INBOX_RESPONDER_ENABLED === 'true';
 const PRIVATE_REPLY_PER_MINUTE = Number(process.env.PRIVATE_REPLY_PER_MINUTE || 10);
 const PRIVATE_REPLY_PER_DAY = Number(process.env.PRIVATE_REPLY_PER_DAY || 200);
@@ -328,12 +333,12 @@ async function loadAccounts() {
   const missing = integrationIds.filter((id) => !rows.some((row) => row.id === id));
   if (missing.length) throw new Error(`Missing approved integrations: ${missing.join(', ')}`);
 
-  if (META_INBOX_RESPONDER_ENABLED || CHAYA_SALES_PRIVATE_REPLIES_ENABLED) {
+  if (META_INBOX_RESPONDER_ENABLED || SALES_PRIVATE_REPLIES_ENABLED) {
     for (const account of loaded.values()) {
       if (account.platform !== 'instagram') continue;
       if (
         !(META_INBOX_RESPONDER_ENABLED && isApprovedInboxAccount(account)) &&
-        !(CHAYA_SALES_PRIVATE_REPLIES_ENABLED && isChayaSalesAccount(account))
+        !(SALES_PRIVATE_REPLIES_ENABLED && isSalesAccount(account))
       ) continue;
       try {
         account.messagingEndpointId = await resolveInstagramMessagingEndpoint(account);
@@ -418,7 +423,7 @@ async function syncSubscriptions() {
   for (const account of accountsByMetaId.values()) {
     const strategy = metaSubscriptionStrategy(account.platform, account.metaAccountId, {
       includeMessaging:
-        (CHAYA_SALES_PRIVATE_REPLIES_ENABLED && isChayaSalesAccount(account)) ||
+        (SALES_PRIVATE_REPLIES_ENABLED && isSalesAccount(account)) ||
         (META_INBOX_RESPONDER_ENABLED && isApprovedInboxAccount(account)),
     });
     const fields = strategy.fields;
@@ -598,6 +603,7 @@ async function publishPrivateSalesReply(event, account, message) {
     platform: account.platform,
     commentId: event.commentId,
     message: sanitizeReplyText(message),
+    messagingEndpointId: account.messagingEndpointId,
   });
   if (request.form) {
     return graphRequest(request.path, account.accessToken, {
@@ -633,8 +639,8 @@ async function sendStandardMessage(event, account, message) {
   });
 }
 
-async function sendChayaSalesPrivateReply(event, account) {
-  const reply = buildChayaPrivateSalesReply(event.commentId);
+async function sendSalesPrivateReply(event, account) {
+  const reply = buildPrivateSalesReply(account.persona, event.commentId);
   const reservation = await pool.query(
     `INSERT INTO comment_agent."PrivateReplyLog"
       ("commentId", platform, "integrationId", "metaAccountId", "postId", "commentSenderId",
@@ -701,8 +707,8 @@ async function sendChayaSalesPrivateReply(event, account) {
   }
 }
 
-async function processChayaSalesComment(event, account) {
-  const publicReply = buildChayaSalesPublicReply(event.commentId);
+async function processSalesComment(event, account) {
+  const publicReply = buildSalesPublicReply(account.persona, event.commentId);
   let publicSent = false;
   let publicError = null;
   if (REPLY_MODE === 'limited_live') {
@@ -739,7 +745,7 @@ async function processChayaSalesComment(event, account) {
     return;
   }
 
-  const privateResult = await sendChayaSalesPrivateReply(event, account);
+  const privateResult = await sendSalesPrivateReply(event, account);
   if (publicSent && privateResult.status === 'sent') {
     await updateEvent(event.commentId, 'replied_sales_public_and_private');
   } else if (publicSent) {
@@ -1026,7 +1032,7 @@ async function generateInboxReply(input) {
   };
 }
 
-async function processChayaYesOptIn(event, account, senderProfile) {
+async function processSalesYesOptIn(event, account, senderProfile) {
   if (!isYesOptIn(event.text)) return false;
   const sourceResult = await pool.query(
     `SELECT "commentId"
@@ -1077,13 +1083,14 @@ async function processChayaYesOptIn(event, account, senderProfile) {
     directoryProfile: null,
     category: 'sales_yes_opt_in',
   });
+  const thankYou = buildSalesOptInThankYou(account.persona);
   try {
     await updateInboxReply(event.messageId, 'attempting', {
-      replyText: CHAYA_YES_THANK_YOU,
+      replyText: thankYou,
       model: 'curated-sales-opt-in-v1',
       attempted: true,
     });
-    const result = await sendStandardMessage(event, account, CHAYA_YES_THANK_YOU);
+    const result = await sendStandardMessage(event, account, thankYou);
     await pool.query(
       `UPDATE comment_agent."MessagingOptIn"
           SET "thankYouSentAt"=NOW(), "updatedAt"=NOW()
@@ -1214,9 +1221,9 @@ async function processInboundMessage(event) {
 
   const senderProfile = await fetchMetaSenderProfile(event, account);
   if (
-    CHAYA_SALES_PRIVATE_REPLIES_ENABLED &&
-    isChayaSalesAccount(account) &&
-    await processChayaYesOptIn(event, account, senderProfile)
+    SALES_PRIVATE_REPLIES_ENABLED &&
+    isSalesAccount(account) &&
+    await processSalesYesOptIn(event, account, senderProfile)
   ) {
     return;
   }
@@ -1229,7 +1236,7 @@ async function processInboundMessage(event) {
 
 async function processMarketingOptIn(event) {
   const account = accountsByMetaId.get(event.metaAccountId);
-  if (!account || !isChayaSalesAccount(account) || !event.marketingToken) return;
+  if (!account || !isSalesAccount(account) || !event.marketingToken) return;
   const eventTime = new Date(Number(event.timestamp));
   await pool.query(
     `INSERT INTO comment_agent."MessagingOptIn"
@@ -1261,7 +1268,7 @@ async function dailySalesReport(date, timeZone = SALES_REPORT_TIME_ZONE) {
      SELECT
        (SELECT COUNT(*)::int
           FROM comment_agent."CommentAgentEvent", bounds
-         WHERE persona='chaya' AND status LIKE 'replied_%'
+         WHERE status LIKE 'replied_%'
            AND "processedAt">=start_at AND "processedAt"<end_at) AS "commentsAnswered",
        (SELECT COUNT(*)::int
           FROM comment_agent."PrivateReplyLog", bounds
@@ -1321,11 +1328,12 @@ async function processEvent(event) {
         return;
       }
       if (
-        CHAYA_SALES_PRIVATE_REPLIES_ENABLED &&
-        isChayaSalesAccount(account) &&
-        isChayaSalesTrigger(event.text)
+        SALES_PRIVATE_REPLIES_ENABLED &&
+        isSalesAccount(account) &&
+        isSalesEligibleRelationship(relationship.relationship) &&
+        isSalesTrigger(event.text)
       ) {
-        await processChayaSalesComment(event, account);
+        await processSalesComment(event, account);
         return;
       }
       const promotion = chayaReels33Decision({
@@ -1473,13 +1481,15 @@ const server = http.createServer(async (request, response) => {
     const expectedAccounts = Object.keys(ACCOUNT_ROUTES).length;
     const approvedInboxAccounts = [...accountsByMetaId.values()]
       .filter(isApprovedInboxAccount);
+    const approvedSalesAccounts = [...accountsByMetaId.values()]
+      .filter(isSalesAccount);
     const messagingEndpointErrors = approvedInboxAccounts
       .filter((account) =>
         account.platform === 'instagram' &&
         !account.messagingEndpointId &&
         (
           META_INBOX_RESPONDER_ENABLED ||
-          (CHAYA_SALES_PRIVATE_REPLIES_ENABLED && isChayaSalesAccount(account))
+          (SALES_PRIVATE_REPLIES_ENABLED && isSalesAccount(account))
         )
       )
       .map((account) => ({
@@ -1488,7 +1498,7 @@ const server = http.createServer(async (request, response) => {
         error: account.messagingEndpointError || 'Messaging endpoint is not resolved',
       }));
     const messagingFeatureEnabled =
-      META_INBOX_RESPONDER_ENABLED || CHAYA_SALES_PRIVATE_REPLIES_ENABLED;
+      META_INBOX_RESPONDER_ENABLED || SALES_PRIVATE_REPLIES_ENABLED;
     const brandKnowledgeStatus = brandKnowledge.status();
     const ok =
       databaseSummary.ready &&
@@ -1505,9 +1515,21 @@ const server = http.createServer(async (request, response) => {
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
       commentPolicy: { aiReferences: 'delete_no_reply' },
       chayaSalesPrivateReplies: {
-        enabled: CHAYA_SALES_PRIVATE_REPLIES_ENABLED,
+        enabled: SALES_PRIVATE_REPLIES_ENABLED,
         facebookPageId: CHAYA_FACEBOOK_PAGE_ID,
         instagramAccountId: CHAYA_INSTAGRAM_ACCOUNT_ID,
+        rateLimitPerMinute: PRIVATE_REPLY_PER_MINUTE,
+        rateLimitPerDay: PRIVATE_REPLY_PER_DAY,
+        metaMarketingTokenRequiredOutside24Hours: true,
+        outside24HourSendsEnabled: false,
+      },
+      brandSalesPrivateReplies: {
+        enabled: SALES_PRIVATE_REPLIES_ENABLED,
+        approvedIntegrations: approvedSalesAccounts.length,
+        expectedIntegrations: SALES_INTEGRATION_IDS.length,
+        approvedPersonas: ['chaya', 'ren', 'nadja', 'david'],
+        davidInstagramEnabled: false,
+        knownRegularsExcluded: true,
         rateLimitPerMinute: PRIVATE_REPLY_PER_MINUTE,
         rateLimitPerDay: PRIVATE_REPLY_PER_DAY,
         metaMarketingTokenRequiredOutside24Hours: true,
