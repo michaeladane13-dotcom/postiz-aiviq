@@ -12,6 +12,15 @@ export const DAILY_REEL_ROUTES = Object.freeze({
 });
 
 const REPOSITORY = 'michaeladane13-dotcom/reel-factory';
+const INSTAGRAM_FALLBACKS = Object.freeze({
+  cmt0qmpc70003msb2rcdw9rg5: 'thequietmoonstore',
+  cmt0qr1ky000dmsb2jvsgahou: 'pullmychart',
+});
+const APPROVED_INSTAGRAM_TOKEN_IDS = Object.freeze([
+  DAILY_REEL_ROUTES.chaya.instagram,
+  DAILY_REEL_ROUTES.ren.instagram,
+  DAILY_REEL_ROUTES.nadja.instagram,
+]);
 const GH_HEADERS = (token) => ({
   Accept: 'application/vnd.github+json',
   Authorization: `Bearer ${token}`,
@@ -161,7 +170,31 @@ export class DailyReelPublisher {
     if (!row || row.providerIdentifier !== platform || !/^\d+$/.test(String(row.internalId || ''))) {
       throw new Error(`Approved ${platform} integration ${id} is missing or mismatched`);
     }
-    return { accountId: String(row.internalId), token: String(row.token).split('___')[0] };
+    const accountId = String(row.internalId);
+    const ownToken = String(row.token).split('___')[0];
+    if (platform !== 'instagram') return { accountId, token: ownToken };
+    try {
+      await this.graph(accountId, ownToken, { fields: 'id' });
+      return { accountId, token: ownToken };
+    } catch (ownError) {
+      const expectedUsername = INSTAGRAM_FALLBACKS[id];
+      if (!expectedUsername) throw ownError;
+      const alternatives = await this.pool.query(
+        `SELECT id, token FROM "Integration"
+          WHERE id = ANY($1::text[]) AND disabled=false AND "providerIdentifier"='instagram'`,
+        [APPROVED_INSTAGRAM_TOKEN_IDS]);
+      for (const candidate of alternatives.rows) {
+        const token = String(candidate.token).split('___')[0];
+        try {
+          const account = await this.graph(accountId, token, { fields: 'id,username' });
+          if (String(account.id) === accountId &&
+              String(account.username || '').toLowerCase() === expectedUsername) {
+            return { accountId, token };
+          }
+        } catch { /* This candidate does not have access to this exact account. */ }
+      }
+      throw ownError;
+    }
   }
 
   async probeIntegrations() {
