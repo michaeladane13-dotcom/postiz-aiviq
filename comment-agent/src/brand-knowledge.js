@@ -18,6 +18,13 @@ function cleanText(value, maxLength = 500) {
     .slice(0, maxLength);
 }
 
+function redactPrices(value) {
+  return String(value || '')
+    .replace(/(?:CA|US|AU|NZ)?\$\s*\d+(?:[.,]\d{1,2})?/gi, '[price omitted]')
+    .replace(/[€£]\s*\d+(?:[.,]\d{1,2})?/g, '[price omitted]')
+    .replace(/\b\d+(?:[.,]\d{1,2})?\s*(?:CAD|USD|AUD|NZD|EUR|GBP|dollars?|euros?|pounds?)\b/gi, '[price omitted]');
+}
+
 function stringList(value, label, { maxItems, maxLength }) {
   if (!Array.isArray(value) || !value.length || value.length > maxItems) {
     throw new Error(`${label} must contain 1 to ${maxItems} items`);
@@ -169,7 +176,28 @@ export function extractOfficialPageFacts(html, url) {
       const parsed = JSON.parse(match[1].trim());
       for (const node of schemaNodes(parsed)) {
         const fact = structuredFact(node);
-        if (fact) structured.push(fact);
+        if (fact) {
+          for (const key of ['url']) {
+            if (!fact[key]) continue;
+            try {
+              fact[key] = approvedUrl(new URL(fact[key], url).toString(), new URL(url).hostname.replace(/^www\./, ''), `structured ${key}`);
+            } catch {
+              fact[key] = null;
+            }
+          }
+          if (fact.offer?.url) {
+            try {
+              fact.offer.url = approvedUrl(
+                new URL(fact.offer.url, url).toString(),
+                new URL(url).hostname.replace(/^www\./, ''),
+                'structured offer URL'
+              );
+            } catch {
+              fact.offer.url = null;
+            }
+          }
+          structured.push(fact);
+        }
       }
     } catch {
       // Invalid structured data is ignored rather than supplied to the model.
@@ -184,15 +212,16 @@ export function extractOfficialPageFacts(html, url) {
 }
 
 function publicPageFact(page, publicReply) {
+  const safeText = (value) => publicReply ? redactPrices(value) : value;
   return {
     url: page.url,
-    title: page.title,
-    description: page.description,
+    title: safeText(page.title),
+    description: safeText(page.description),
     structured: page.structured.map((item) => ({
       type: item.type,
-      name: item.name,
-      description: item.description,
-      category: item.category,
+      name: safeText(item.name),
+      description: safeText(item.description),
+      category: safeText(item.category),
       url: item.url,
       ...(!publicReply && item.offer ? { offer: item.offer } : {}),
     })),
@@ -238,7 +267,7 @@ export class GitHubBrandKnowledge {
       `Official name: ${profile.displayName}`,
       `Official domain: ${profile.officialDomain}`,
       `Official booking page: ${profile.bookingUrl}`,
-      `Safe Chaya Ops facts: ${JSON.stringify(profile.opsFacts)}`,
+      `Safe Chaya Ops facts: ${JSON.stringify(publicReply ? profile.opsFacts.map(redactPrices) : profile.opsFacts)}`,
       `Shared operating rules: ${JSON.stringify(this.manifest.sharedRules)}`,
       `Latest official website facts: ${JSON.stringify(websiteFacts)}`,
       publicReply
@@ -356,4 +385,3 @@ export class GitHubBrandKnowledge {
     }
   }
 }
-

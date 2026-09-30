@@ -24,7 +24,7 @@ function manifest() {
       officialDomain: domain,
       bookingUrl: `https://${domain}/book`,
       websitePages: [`https://${domain}/facts`],
-      opsFacts: [`${persona} ops fact`],
+      opsFacts: [`${persona} ops fact. Private option CA$99.`],
     }])),
   };
 }
@@ -69,7 +69,7 @@ test('refreshes GitHub plus official sites and keeps every persona context isola
     const persona = Object.entries(DOMAINS).find(([, domain]) => url.includes(domain))?.[0];
     return new Response(`<!doctype html><head>
       <title>${persona} official title</title>
-      <meta name="description" content="${persona} official description">
+      <meta name="description" content="${persona} official description from CA$39">
       <script type="application/ld+json">{
         "@type":"Product","name":"${persona} private product",
         "offers":{"@type":"Offer","price":"39.00","priceCurrency":"CAD"}
@@ -91,9 +91,9 @@ test('refreshes GitHub plus official sites and keeps every persona context isola
   assert.match(ren, /39\.00/);
 
   const publicRen = knowledge.contextFor('ren', { publicReply: true });
-  assert.doesNotMatch(publicRen, /39\.00|priceCurrency/);
+  assert.doesNotMatch(publicRen, /39(?:\.00)?|99|priceCurrency/);
+  assert.match(publicRen, /price omitted/);
   assert.equal(knowledge.contextFor('daniel'), '');
   assert.equal(knowledge.status().ok, true);
   assert.equal(knowledge.status().profilesLoaded, 4);
 });
-
