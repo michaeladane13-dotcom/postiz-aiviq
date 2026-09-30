@@ -9,6 +9,7 @@ const SALES_ACCOUNT_ROUTES = Object.freeze({
   cmt0qnn4j0005msb2y947wjgo: Object.freeze({ persona: 'ren', platform: 'instagram' }),
   cmt3axou80001l6padw48ggsi: Object.freeze({ persona: 'ren', platform: 'facebook' }),
   cmt0qpsu7000bmsb2oga61nh4: Object.freeze({ persona: 'nadja', platform: 'instagram' }),
+  cmt3axpg50003l6pa5i2lf62b: Object.freeze({ persona: 'nadja', platform: 'facebook' }),
   cmt0rnpaa0003n4bf1mkdhe9s: Object.freeze({ persona: 'david', platform: 'facebook' }),
 });
 

@@ -88,7 +88,7 @@ test('uses app-level Instagram webhooks and account-level Facebook subscriptions
 });
 
 test('every approved integration has one immutable persona and platform', () => {
-  assert.equal(Object.keys(ACCOUNT_ROUTES).length, 6);
+  assert.equal(Object.keys(ACCOUNT_ROUTES).length, 7);
   assert.deepEqual(routeIntegration('cmt0ql9300001msb2pvozfwe9'), {
     persona: 'chaya',
     platform: 'instagram',
@@ -105,10 +105,14 @@ test('every approved integration has one immutable persona and platform', () => 
     persona: 'nadja',
     platform: 'instagram',
   });
+  assert.deepEqual(routeIntegration('cmt3axpg50003l6pa5i2lf62b'), {
+    persona: 'nadja',
+    platform: 'facebook',
+  });
   assert.equal(routeIntegration('unknown'), null);
 });
 
-test('live routing is limited to Chaya, Ren, Instagram-only Nadja and Facebook-only David', () => {
+test('live routing is limited to Chaya, Ren, Nadja and Facebook-only David', () => {
   const platformsByPersona = Object.values(ACCOUNT_ROUTES).reduce((result, route) => {
     result[route.persona] ||= [];
     result[route.persona].push(route.platform);
@@ -119,7 +123,7 @@ test('live routing is limited to Chaya, Ren, Instagram-only Nadja and Facebook-o
   assert.deepEqual(platformsByPersona, {
     chaya: ['facebook', 'instagram'],
     ren: ['facebook', 'instagram'],
-    nadja: ['instagram'],
+    nadja: ['facebook', 'instagram'],
     david: ['facebook'],
   });
 });

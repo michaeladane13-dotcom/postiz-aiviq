@@ -20,17 +20,18 @@ const SALES_ACCOUNTS = Object.freeze([
   { integrationId: 'cmt0qnn4j0005msb2y947wjgo', persona: 'ren', platform: 'instagram' },
   { integrationId: 'cmt3axou80001l6padw48ggsi', persona: 'ren', platform: 'facebook' },
   { integrationId: 'cmt0qpsu7000bmsb2oga61nh4', persona: 'nadja', platform: 'instagram' },
+  { integrationId: 'cmt3axpg50003l6pa5i2lf62b', persona: 'nadja', platform: 'facebook' },
   { integrationId: 'cmt0rnpaa0003n4bf1mkdhe9s', persona: 'david', platform: 'facebook' },
 ]);
 
-test('sales replies are locked to the six approved brand integrations', () => {
-  assert.equal(SALES_INTEGRATION_IDS.length, 6);
+test('sales replies are locked to the seven approved brand integrations', () => {
+  assert.equal(SALES_INTEGRATION_IDS.length, 7);
   for (const account of SALES_ACCOUNTS) assert.equal(isSalesAccount(account), true);
   assert.equal(isSalesAccount({
     integrationId: 'cmt0rnpaa0003n4bf1mkdhe9s', persona: 'david', platform: 'instagram',
   }), false);
   assert.equal(isSalesAccount({
-    integrationId: 'cmt0qpsu7000bmsb2oga61nh4', persona: 'nadja', platform: 'facebook',
+    integrationId: 'cmt3axpg50003l6pa5i2lf62b', persona: 'nadja', platform: 'instagram',
   }), false);
   assert.equal(isSalesAccount({
     integrationId: 'cmt1vavvs0007myc1cbsep0dd', persona: 'ren', platform: 'facebook',

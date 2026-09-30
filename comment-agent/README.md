@@ -35,9 +35,8 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
   from public-comment context. Inbox replies may use a price only when the latest
   official structured website data explicitly contains it.
 - Inbox handling is locked to the exact Chaya Facebook and Instagram, Ren Facebook
-  and Instagram, Nadja Instagram, and David Facebook integrations. The similarly
-  named Nadia Facebook Page is not included.
-- The comment sales flow uses that same six-integration allowlist. A new follower
+  and Instagram, Nadja Facebook and Instagram, and David Facebook integrations.
+- The comment sales flow uses that same seven-integration allowlist. A new follower
   who comments `READ`, `READY`, `YES`, `ME`, or asks about a reading receives a
   price-free public acknowledgement and one private, brand-specific offer. Known
   regulars continue through the normal relationship-aware reply path.

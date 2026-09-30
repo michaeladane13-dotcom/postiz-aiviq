@@ -4,6 +4,7 @@ const APPROVED_INBOX_INTEGRATIONS = new Set([
   'cmt0qnn4j0005msb2y947wjgo',
   'cmt3axou80001l6padw48ggsi',
   'cmt0qpsu7000bmsb2oga61nh4',
+  'cmt3axpg50003l6pa5i2lf62b',
   'cmt0rnpaa0003n4bf1mkdhe9s',
 ]);
 

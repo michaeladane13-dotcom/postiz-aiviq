@@ -8,9 +8,9 @@ import {
   validateInboxReply,
 } from '../src/inbox.js';
 
-test('locks inbox handling to the six exact Chaya, Ren, Nadja and David integrations', () => {
+test('locks inbox handling to the seven exact Chaya, Ren, Nadja and David integrations', () => {
   assert.equal(isApprovedInboxAccount({ integrationId: 'cmt0qpsu7000bmsb2oga61nh4' }), true);
-  assert.equal(isApprovedInboxAccount({ integrationId: 'cmt3axpg50003l6pa5i2lf62b' }), false);
+  assert.equal(isApprovedInboxAccount({ integrationId: 'cmt3axpg50003l6pa5i2lf62b' }), true);
   assert.equal(isApprovedInboxAccount({ integrationId: 'unknown' }), false);
 });
 
