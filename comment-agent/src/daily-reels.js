@@ -67,6 +67,34 @@ async function jsonResponse(response, label) {
   return data;
 }
 
+function decodeHtmlAttribute(value) {
+  return value.replace(/&(#(?:x[0-9a-f]+|[0-9]+)|amp|quot|apos|lt|gt|nbsp);/gi, (match, entity) => {
+    if (entity.startsWith('#')) {
+      const hex = entity[1]?.toLowerCase() === 'x';
+      const point = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+      return Number.isInteger(point) && point >= 0 && point <= 0x10ffff
+        ? String.fromCodePoint(point) : match;
+    }
+    return { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: '\u00a0' }[entity.toLowerCase()] || match;
+  });
+}
+
+export function publicFacebookReelMatches(html, videoId, pageId, caption) {
+  const tags = new Map();
+  for (const match of html.matchAll(/<meta\s+property="(og:(?:url|title))"\s+content="([^"]*)"/gi)) {
+    tags.set(match[1].toLowerCase(), decodeHtmlAttribute(match[2]));
+  }
+  const url = tags.get('og:url');
+  const title = tags.get('og:title');
+  if (!url || !title || !/^\d+$/.test(String(videoId)) || !/^\d+$/.test(String(pageId))) return false;
+  let canonical;
+  try { canonical = new URL(url); } catch { return false; }
+  return canonical.protocol === 'https:' && canonical.hostname === 'www.facebook.com' &&
+    canonical.pathname.startsWith(`/${pageId}/videos/`) &&
+    canonical.pathname.endsWith(`/${videoId}/`) &&
+    title.startsWith(`${caption} | `);
+}
+
 export class DailyReelPublisher {
   constructor({ pool, token, graphVersion = 'v26.0', fetchImpl = fetch, now = () => new Date(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
     this.pool = pool;
@@ -197,6 +225,24 @@ export class DailyReelPublisher {
     }
   }
 
+  async publicFacebookReel(videoId, account, caption) {
+    const url = `https://www.facebook.com/reel/${videoId}`;
+    try {
+      const response = await this.fetch(url, {
+        redirect: 'follow', signal: AbortSignal.timeout(15_000),
+        headers: { Accept: 'text/html' },
+      });
+      if (!response.ok || !new URL(response.url).hostname.endsWith('.facebook.com') ||
+          !response.headers.get('content-type')?.toLowerCase().includes('text/html') ||
+          Number(response.headers.get('content-length') || 0) > 2_000_000) return false;
+      const html = await response.text();
+      return html.length <= 2_000_000 &&
+        publicFacebookReelMatches(html, videoId, account.accountId, caption);
+    } catch {
+      return false;
+    }
+  }
+
   async probeIntegrations() {
     const failures = [];
     let ready = 0;
@@ -259,11 +305,26 @@ export class DailyReelPublisher {
       const reserved = await this.reserve(record, platform, integrationId, caption, day);
       if (!reserved) {
         const { rows } = await this.pool.query(
-          `SELECT status, error FROM comment_agent."DailyReelPublication"
+          `SELECT status, error, "containerId" FROM comment_agent."DailyReelPublication"
             WHERE "assetId"=$1 AND "integrationId"=$2`, [record.asset_id, integrationId]);
+        const existing = rows[0];
+        // A Facebook finish may have succeeded even if Meta refuses the
+        // subsequent Graph GET. Reconcile the exact public Reel; never upload
+        // another copy of a record that already has a video ID.
+        if (platform === 'facebook' && existing?.containerId &&
+            ['needs_review', 'published_unverified'].includes(existing.status)) {
+          const account = await this.integration(integrationId, platform);
+          if (await this.publicFacebookReel(existing.containerId, account, caption)) {
+            await this.update(record, integrationId, 'verified', {
+              permalink: `https://www.facebook.com/reel/${existing.containerId}`,
+            });
+            existing.status = 'verified';
+            existing.error = null;
+          }
+        }
         results.push({ brand: record.brand, platform,
-          status: rows[0]?.status === 'verified' ? 'verified' : rows[0]?.status || 'conflict',
-          error: rows[0]?.error || undefined });
+          status: existing?.status === 'verified' ? 'verified' : existing?.status || 'conflict',
+          error: existing?.error || undefined });
         continue;
       }
       try {
@@ -340,19 +401,27 @@ export class DailyReelPublisher {
       }),
     });
     await this.update(record, integrationId, 'published_unverified', { mediaId: started.video_id });
+    let lastGraphError;
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const media = await this.graph(started.video_id, account.token, { fields: 'id,status,permalink_url' });
-      const state = String(media.status?.video_status || '').toLowerCase();
-      if (state === 'error' || state === 'failed') throw new Error(`Facebook Reel processing ${state}`);
-      if (['ready', 'published'].includes(state) || media.permalink_url) {
+      let graphPublished = false;
+      try {
+        const media = await this.graph(started.video_id, account.token, { fields: 'id,status,permalink_url' });
+        const state = String(media.status?.video_status || '').toLowerCase();
+        if (state === 'error' || state === 'failed') throw new Error(`Facebook Reel processing ${state}`);
+        graphPublished = state === 'published' || Boolean(media.permalink_url);
+      } catch (error) {
+        if (String(error.message).startsWith('Facebook Reel processing ')) throw error;
+        lastGraphError = String(error.message).slice(0, 250);
+      }
+      if (graphPublished || await this.publicFacebookReel(started.video_id, account, caption)) {
         await this.update(record, integrationId, 'verified', {
-          permalink: media.permalink_url || `https://www.facebook.com/reel/${started.video_id}`,
+          permalink: `https://www.facebook.com/reel/${started.video_id}`,
         });
         return;
       }
       if (attempt < 39) await this.sleep(3000);
     }
-    throw new Error('Facebook Reel accepted but is still processing; no duplicate upload was attempted');
+    throw new Error(`Facebook Reel accepted but not publicly verified; no duplicate upload was attempted${lastGraphError ? ` (${lastGraphError})` : ''}`);
   }
 
   async run() {
