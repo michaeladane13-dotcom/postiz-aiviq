@@ -28,6 +28,7 @@ export function classifyComment(text) {
 const SAFE_POSITIVE_COMMENT =
   /\b(?:beautiful|love\s+this|loved\s+this|needed\s+this|thank\s+you|thanks|so\s+true|exactly|interesting|resonat(?:ed|es)|amazing|powerful|helpful|inspiring|spot\s+on|this\s+landed|wonderful|perfect|great)\b/i;
 const SAFE_POSITIVE_EMOJI_ONLY = /^[\s❤💜💕💖💗💞✨🙏🥰😍🙌🌙🫶👏]+$/u;
+const CHAYA_CALENDAR_ANSWER = /^(?:(?:january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+\d{1,2}(?:st|nd|rd|th)?(?:[\s,]+\d{2,4})?)?|\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:[\s,]+\d{2,4})?|\d{1,2}[/.\-]\d{1,2}(?:[/.\-]\d{2,4})?)[.!\s]*$/i;
 const LOTTERY_REQUEST = /\b(?:lottery|lotto|jackpot|winning\s+numbers?)\b/i;
 const LOTTERY_SENSITIVE_CONTEXT =
   /\b(?:death|died|suicid|doctor|medical|legal|lawyer|pregnan|refund|scam|hate)\b/i;
@@ -108,6 +109,12 @@ const LOTTERY_REPLIES = Object.freeze({
     'We can see what comes through in a reading, lovely, but we don’t give out lottery numbers. If we knew those, we’d be rich too 😂',
 });
 
+const CHAYA_CALENDAR_REPLIES = Object.freeze([
+  'Thank you, lovely 💜 I’ve got it.',
+  'Got it, lovely 💜 Thank you for sharing.',
+  'Thank you for sharing, lovely 💜',
+]);
+
 function stableReplyIndex(value, size) {
   let hash = 0;
   for (const character of String(value || '')) {
@@ -127,6 +134,13 @@ export function buildSafeTemplateReply({
   if (/https?:\/\/|www\./i.test(normalized)) return null;
   if (LOTTERY_REQUEST.test(normalized) && !LOTTERY_SENSITIVE_CONTEXT.test(normalized)) {
     return sanitizeReplyText(LOTTERY_REPLIES[persona]);
+  }
+  if (persona === 'chaya' && CHAYA_CALENDAR_ANSWER.test(normalized)) {
+    return sanitizeReplyText(
+      CHAYA_CALENDAR_REPLIES[
+        stableReplyIndex(`${senderId}:${normalized}`, CHAYA_CALENDAR_REPLIES.length)
+      ]
+    );
   }
   if (normalized.includes('?')) return null;
   if (UNSAFE_TEMPLATE_SIGNAL.test(normalized)) return null;

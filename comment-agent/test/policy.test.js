@@ -203,6 +203,34 @@ test('brief neutral-positive reactions receive a safe persona reply', () => {
   assert.doesNotMatch(reply, /\u2014/);
 });
 
+test('Chaya calendar answers receive a live-safe acknowledgement without a model', () => {
+  for (const comment of ['March', 'august', 'February 7 1963', '7 February 1963', '02/07/1963']) {
+    const reply = buildSafeTemplateReply({
+      persona: 'chaya',
+      comment,
+      senderId: `calendar:${comment}`,
+    });
+
+    assert.match(reply, /thank you|got it/i, comment);
+    assert.doesNotMatch(reply, /reading|price|\u2014/i, comment);
+  }
+});
+
+test('calendar acknowledgement is limited to Chaya and simple date-only comments', () => {
+  assert.equal(
+    buildSafeTemplateReply({ persona: 'ren', comment: 'March', senderId: 'calendar-ren' }),
+    null
+  );
+  assert.equal(
+    buildSafeTemplateReply({
+      persona: 'chaya',
+      comment: 'March, will I meet someone?',
+      senderId: 'calendar-question',
+    }),
+    null
+  );
+});
+
 test('lottery questions get a humorous refusal without promising numbers or a win', () => {
   const replies = ['chaya', 'ren', 'david'].map((persona) =>
     buildSafeTemplateReply({
