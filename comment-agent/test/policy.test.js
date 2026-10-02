@@ -220,9 +220,26 @@ test('Chaya birthday campaign sends date answers to the reel CTA without a model
     assert.equal(decision.action, 'reply', comment);
     assert.equal(decision.reason, 'birthday_month_lead', comment);
     assert.match(decision.text, /sign up/i, comment);
-    assert.match(decision.text, /full month.*inbox/i, comment);
+    assert.match(decision.text, /(?:full|complete) note.*inbox/i, comment);
+    assert.match(decision.text, /new-client reading offer/i, comment);
     assert.doesNotMatch(decision.text, /price|\u2014/i, comment);
   }
+});
+
+test('Chaya birthday campaign does not pitch the new-client offer to known regulars', () => {
+  const decision = chayaBirthdayLeadDecision({
+    persona: 'chaya',
+    platform: 'facebook',
+    postText: birthdayLeadPost,
+    comment: 'March',
+    senderId: 'known-regular',
+    relationship: 'regular',
+  });
+
+  assert.equal(decision.action, 'reply');
+  assert.match(decision.text, /sign up/i);
+  assert.match(decision.text, /full note.*inbox/i);
+  assert.doesNotMatch(decision.text, /new-client|offer|price|\u2014/i);
 });
 
 test('birthday campaign CTA is limited to the exact Chaya Facebook campaign', () => {

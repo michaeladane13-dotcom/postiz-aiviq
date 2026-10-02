@@ -1356,6 +1356,7 @@ async function processEvent(event) {
         postText,
         comment: event.text,
         senderId: event.senderId,
+        relationship: relationship.relationship,
       });
       if (promotion?.action === 'review') {
         await updateEvent(event.commentId, `needs_review_${promotion.reason}`);

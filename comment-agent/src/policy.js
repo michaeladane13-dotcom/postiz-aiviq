@@ -112,9 +112,13 @@ const LOTTERY_REPLIES = Object.freeze({
 const CHAYA_BIRTHDAY_LEAD_POST =
   /\btype your birthday\b.{0,200}\bi will show you the date\b.{0,200}\bthe full month comes to your inbox\b/i;
 const CHAYA_BIRTHDAY_LEAD_REPLIES = Object.freeze([
-  'Got it, lovely 💜 Tap Sign up above to reveal your date, what it means and what to do. The full month will come to your inbox.',
-  'Thank you, lovely 💜 Use the Sign up button above to see your date and receive the full month in your inbox.',
-  'I’ve got it, lovely 💜 Tap Sign up above for your date and the full month in your inbox.',
+  'Pop your full date of birth into Sign up above, lovely 💜 It shows where the pressure sits, where the opening is and your one date to watch this month. The full note and new-client reading offer will come to your inbox.',
+  'Use Sign up above with your full birthday, lovely 💜 That unlocks your personal month, including the opening and the date to watch. The full note and new-client reading offer will come to your inbox.',
+  'Your birthday is the starting point, lovely 💜 Tap Sign up and enter the full date to see what this month holds. The complete note and new-client reading offer will arrive in your inbox.',
+]);
+const CHAYA_BIRTHDAY_LEAD_REGULAR_REPLIES = Object.freeze([
+  'Pop your full date of birth into Sign up above, lovely 💜 It shows where the pressure sits, where the opening is and your one date to watch this month. The full note will come to your inbox.',
+  'Use Sign up above with your full birthday, lovely 💜 That unlocks your personal month, including the opening and the date to watch. The full note will come to your inbox.',
 ]);
 
 function stableReplyIndex(value, size) {
@@ -172,6 +176,7 @@ export function chayaBirthdayLeadDecision({
   postText,
   comment,
   senderId = '',
+  relationship = 'new_follower',
 }) {
   if (persona !== 'chaya' || platform !== 'facebook') return null;
   const normalizedPost = normalizeComment(postText);
@@ -179,13 +184,15 @@ export function chayaBirthdayLeadDecision({
   if (!CHAYA_BIRTHDAY_LEAD_POST.test(normalizedPost)) return null;
   if (!CHAYA_CALENDAR_ANSWER.test(normalizedComment)) return null;
 
+  const replies = ['regular', 'friend_regular'].includes(relationship)
+    ? CHAYA_BIRTHDAY_LEAD_REGULAR_REPLIES
+    : CHAYA_BIRTHDAY_LEAD_REPLIES;
+
   return {
     action: 'reply',
     reason: 'birthday_month_lead',
     text: sanitizeReplyText(
-      CHAYA_BIRTHDAY_LEAD_REPLIES[
-        stableReplyIndex(`${senderId}:${normalizedComment}`, CHAYA_BIRTHDAY_LEAD_REPLIES.length)
-      ]
+      replies[stableReplyIndex(`${senderId}:${normalizedComment}`, replies.length)]
     ),
   };
 }
