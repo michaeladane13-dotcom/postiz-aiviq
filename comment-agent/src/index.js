@@ -3,6 +3,7 @@ import http from 'node:http';
 import { Pool } from 'pg';
 import { BufferApi } from './buffer.js';
 import { GitHubBrandKnowledge } from './brand-knowledge.js';
+import { GitHubClientData } from './client-data.js';
 import { GitHubClientDirectory } from './client-directory.js';
 import { DailyReelPublisher } from './daily-reels.js';
 import { verifyDailyReelOidc } from './github-oidc.js';
@@ -36,6 +37,7 @@ import {
   buildSalesOptInThankYou,
   buildSalesPublicReply,
   buildMetaPrivateReplyRequest,
+  isDirectSalesInterest,
   isSalesAccount,
   isSalesEligibleRelationship,
   isSalesTrigger,
@@ -75,6 +77,15 @@ const CLIENT_BRAND_KNOWLEDGE_PATH =
 const CLIENT_HANDOVER_REF = process.env.CLIENT_HANDOVER_REF || 'main';
 const CLIENT_HANDOVER_GITHUB_TOKEN = process.env.CLIENT_HANDOVER_GITHUB_TOKEN || '';
 const CLIENT_HANDOVER_SYNC_MS = 4 * 60 * 60 * 1000;
+const CLIENT_DATA_REPO = process.env.CLIENT_DATA_REPO ||
+  'michaeladane13-dotcom/chaya-client-data';
+const CLIENT_DATA_PATH = process.env.CLIENT_DATA_PATH || 'clients.json';
+const CLIENT_DATA_README_PATH = process.env.CLIENT_DATA_README_PATH || 'README.md';
+const CLIENT_DATA_METADATA_PATH = process.env.CLIENT_DATA_METADATA_PATH || 'README.txt';
+const CLIENT_DATA_REF = process.env.CLIENT_DATA_REF || 'main';
+const CLIENT_DATA_GITHUB_TOKEN =
+  process.env.CLIENT_DATA_GITHUB_TOKEN || CLIENT_HANDOVER_GITHUB_TOKEN;
+const CLIENT_DATA_SYNC_MS = 3 * 60 * 60 * 1000;
 const TIKTOK_CHANNEL_REFRESH_MS = 24 * 60 * 60 * 1000;
 const TIKTOK_RETRY_POLL_MS = 15 * 60 * 1000;
 const clientDirectory = new GitHubClientDirectory({
@@ -94,6 +105,14 @@ const brandKnowledge = new GitHubBrandKnowledge({
   path: CLIENT_BRAND_KNOWLEDGE_PATH,
   ref: CLIENT_HANDOVER_REF,
   token: CLIENT_HANDOVER_GITHUB_TOKEN,
+});
+const clientData = new GitHubClientData({
+  repository: CLIENT_DATA_REPO,
+  path: CLIENT_DATA_PATH,
+  readmePath: CLIENT_DATA_README_PATH,
+  metadataPath: CLIENT_DATA_METADATA_PATH,
+  ref: CLIENT_DATA_REF,
+  token: CLIENT_DATA_GITHUB_TOKEN,
 });
 const privateReplyRateLimiter = new PrivateReplyRateLimiter({
   perMinute: PRIVATE_REPLY_PER_MINUTE,
@@ -649,8 +668,8 @@ async function sendStandardMessage(event, account, message) {
   });
 }
 
-async function sendSalesPrivateReply(event, account) {
-  const reply = buildPrivateSalesReply(account.persona, event.commentId);
+async function sendSalesPrivateReply(event, account, { returningClient = false } = {}) {
+  const reply = buildPrivateSalesReply(account.persona, event.commentId, { returningClient });
   const reservation = await pool.query(
     `INSERT INTO comment_agent."PrivateReplyLog"
       ("commentId", platform, "integrationId", "metaAccountId", "postId", "commentSenderId",
@@ -717,7 +736,7 @@ async function sendSalesPrivateReply(event, account) {
   }
 }
 
-async function processSalesComment(event, account) {
+async function processSalesComment(event, account, { returningClient = false } = {}) {
   const publicReply = buildSalesPublicReply(account.persona, event.commentId);
   let publicSent = false;
   let publicError = null;
@@ -755,7 +774,7 @@ async function processSalesComment(event, account) {
     return;
   }
 
-  const privateResult = await sendSalesPrivateReply(event, account);
+  const privateResult = await sendSalesPrivateReply(event, account, { returningClient });
   if (publicSent && privateResult.status === 'sent') {
     await updateEvent(event.commentId, 'replied_sales_public_and_private');
   } else if (publicSent) {
@@ -819,14 +838,25 @@ async function saveEvent(event, account, decision) {
   return result.rowCount === 1;
 }
 
+function strongestEngagement(...values) {
+  if (values.includes('do_not_engage')) return 'do_not_engage';
+  if (values.includes('manual_review')) return 'manual_review';
+  return 'reply';
+}
+
 async function loadRelationship(event, account) {
   const directoryProfile = clientDirectory.match(event.username);
+  const opsProfile = clientData.matchSocial({
+    username: event.username,
+    senderId: event.senderId,
+  });
   if (!event.senderId) {
     return {
-      relationship: directoryProfile?.relationship || 'new_follower',
-      engagement: directoryProfile?.engagement || 'reply',
+      relationship: directoryProfile?.relationship || opsProfile?.relationship || 'new_follower',
+      engagement: strongestEngagement(directoryProfile?.engagement, opsProfile?.engagement),
       notes: '',
       recentHistory: [],
+      salesBlocked: Boolean(opsProfile?.noSales || opsProfile?.packageStatus),
     };
   }
 
@@ -867,11 +897,14 @@ async function loadRelationship(event, account) {
       ? profile.relationship
       : directoryProfile?.relationship
         ? directoryProfile.relationship
+        : opsProfile?.relationship
+          ? opsProfile.relationship
         : positiveHistoryCount >= 3
           ? 'regular'
           : 'new_follower',
-    engagement: directoryProfile?.engagement || 'reply',
+    engagement: strongestEngagement(directoryProfile?.engagement, opsProfile?.engagement),
     notes: profile?.confirmed ? profile.notes || '' : '',
+    salesBlocked: Boolean(opsProfile?.noSales || opsProfile?.packageStatus),
     recentHistory: historyResult.rows.reverse().map((row) => ({
       comment: row.commentText,
       outcome: row.status,
@@ -944,8 +977,16 @@ async function fetchMetaSenderProfile(event, account) {
   }
 }
 
-async function reserveInboxReply({ event, account, senderProfile, directoryProfile, category }) {
-  const knowledgeStatus = handoverKnowledge.status();
+async function reserveInboxReply({
+  event,
+  account,
+  senderProfile,
+  directoryProfile,
+  opsProfile = null,
+  category,
+}) {
+  const handoverStatus = handoverKnowledge.status();
+  const clientDataStatus = clientData.status();
   const result = await pool.query(
     `INSERT INTO comment_agent."InboxReplyLog"
       ("messageId", platform, "integrationId", "metaAccountId", persona, "recipientId",
@@ -963,11 +1004,13 @@ async function reserveInboxReply({ event, account, senderProfile, directoryProfi
       event.senderId,
       senderProfile.username || null,
       senderProfile.name || null,
-      directoryProfile?.id || null,
+      opsProfile?.id || directoryProfile?.id || null,
       category,
-      directoryProfile && account.persona === 'chaya'
-        ? knowledgeStatus.sourceUpdatedAt
-        : null,
+      opsProfile
+        ? clientDataStatus.sourceExportedAt || clientDataStatus.lastSuccessfulSyncAt
+        : directoryProfile
+          ? handoverStatus.sourceUpdatedAt
+          : null,
     ]
   );
   return result.rowCount === 1;
@@ -1126,25 +1169,32 @@ async function processSalesYesOptIn(event, account, senderProfile) {
 }
 
 async function processInboxReply(event, account, senderProfile) {
-  const directoryProfile = account.persona === 'chaya'
-    ? clientDirectory.match(senderProfile.username)
-    : null;
+  const directoryProfile = clientDirectory.match(senderProfile.username);
+  const opsProfile = clientData.matchSocial({
+    username: senderProfile.username,
+    senderId: event.senderId,
+  });
   const decision = classifyInboxMessage(event.text);
   if (!(await reserveInboxReply({
     event,
     account,
     senderProfile,
     directoryProfile,
+    opsProfile,
     category: decision.category,
   }))) return;
 
-  if (directoryProfile?.engagement === 'do_not_engage') {
+  const clientEngagement = strongestEngagement(
+    directoryProfile?.engagement,
+    opsProfile?.engagement
+  );
+  if (clientEngagement === 'do_not_engage') {
     await updateInboxReply(event.messageId, 'do_not_engage');
     await updateInboundMessage(event.messageId, 'do_not_engage');
     return;
   }
-  if (directoryProfile?.engagement === 'manual_review' || decision.action === 'review') {
-    const status = directoryProfile?.engagement === 'manual_review'
+  if (clientEngagement === 'manual_review' || decision.action === 'review') {
+    const status = clientEngagement === 'manual_review'
       ? 'needs_review_client_rule'
       : `needs_review_${decision.category}`;
     await updateInboxReply(event.messageId, status, { error: senderProfile.error });
@@ -1161,17 +1211,21 @@ async function processInboxReply(event, account, senderProfile) {
   let generationError = null;
   if (!reply) {
     const recentHistory = await loadRecentInboxHistory(event, account);
+    const verifiedSenderName = opsProfile
+      ? opsProfile.firstName
+      : directoryProfile?.clientLabel || senderProfile.name;
+    const privateContext = [
+      directoryProfile ? handoverKnowledge.contextFor(directoryProfile) : '',
+      opsProfile ? clientData.contextFor(opsProfile, event.text) : '',
+    ].filter(Boolean).join('\n\n');
     const generated = await generateInboxReply({
       displayName: PERSONAS[account.persona].displayName,
       voice: PERSONAS[account.persona].voice,
       message: event.text,
-      senderName: senderProfile.name || senderProfile.username,
+      senderName: verifiedSenderName,
       recentHistory,
       brandContext: brandKnowledge.contextFor(account.persona),
-      privateClientContext:
-        account.persona === 'chaya' && directoryProfile
-          ? handoverKnowledge.contextFor(directoryProfile)
-          : '',
+      privateClientContext: privateContext,
     });
     reply = generated.reply;
     model = generated.model;
@@ -1344,6 +1398,19 @@ async function processEvent(event) {
         isSalesTrigger(event.text)
       ) {
         await processSalesComment(event, account);
+        return;
+      }
+      if (
+        SALES_PRIVATE_REPLIES_ENABLED &&
+        isSalesAccount(account) &&
+        !isSalesEligibleRelationship(relationship.relationship) &&
+        isDirectSalesInterest(event.text)
+      ) {
+        if (relationship.salesBlocked) {
+          await updateEvent(event.commentId, 'needs_review_client_sales_rule');
+          return;
+        }
+        await processSalesComment(event, account, { returningClient: true });
         return;
       }
       const promotion = chayaReels33Decision({
@@ -1537,10 +1604,13 @@ const server = http.createServer(async (request, response) => {
     const messagingFeatureEnabled =
       META_INBOX_RESPONDER_ENABLED || SALES_PRIVATE_REPLIES_ENABLED;
     const brandKnowledgeStatus = brandKnowledge.status();
+    const clientDataStatus = clientData.status();
     const ok =
       databaseSummary.ready &&
       accountsByMetaId.size === expectedAccounts &&
       brandKnowledgeStatus.ok &&
+      clientDataStatus.loaded &&
+      !clientDataStatus.error &&
       (!messagingFeatureEnabled || subscriptionSummary.failed === 0) &&
       (!messagingFeatureEnabled || messagingEndpointErrors.length === 0);
     sendJson(response, ok ? 200 : 503, {
@@ -1584,6 +1654,7 @@ const server = http.createServer(async (request, response) => {
         messagingEndpointErrors,
       },
       clientDirectory: clientDirectory.status(),
+      clientData: clientDataStatus,
       handoverKnowledge: handoverKnowledge.status(),
       brandKnowledge: brandKnowledgeStatus,
       dailyReels: { enabled: DAILY_REELS_ENABLED, ...dailyReelPublisher.status },
@@ -1809,6 +1880,9 @@ await handoverKnowledge.sync().catch((error) => {
 await brandKnowledge.sync().catch((error) => {
   console.error('brand_knowledge_sync_failed', error.message);
 });
+await clientData.sync().catch((error) => {
+  console.error('client_data_sync_failed', error.message);
+});
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
@@ -1836,6 +1910,10 @@ setInterval(() => {
 setInterval(() => {
   brandKnowledge.sync().catch((error) => console.error('brand_knowledge_sync_failed', error.message));
 }, CLIENT_HANDOVER_SYNC_MS).unref();
+
+setInterval(() => {
+  clientData.sync().catch((error) => console.error('client_data_sync_failed', error.message));
+}, CLIENT_DATA_SYNC_MS).unref();
 
 
 export { extractEvents };

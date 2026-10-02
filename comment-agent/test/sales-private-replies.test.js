@@ -7,6 +7,7 @@ import {
   buildPrivateSalesReply,
   buildSalesOptInThankYou,
   buildSalesPublicReply,
+  isDirectSalesInterest,
   isSalesAccount,
   isSalesEligibleRelationship,
   isSalesTrigger,
@@ -64,12 +65,21 @@ test('known regulars stay on the normal relationship-aware reply path', () => {
   assert.equal(isSalesEligibleRelationship('friend_regular'), false);
 });
 
+test('returning-client sales replies require direct interest and never use a new-client offer', () => {
+  assert.equal(isDirectSalesInterest('READ'), true);
+  assert.equal(isDirectSalesInterest('Can I book a reading?'), true);
+  assert.equal(isDirectSalesInterest('Tell me what this means'), false);
+  const reply = buildPrivateSalesReply('chaya', 'returning-comment', { returningClient: true });
+  assert.match(reply.message, /returning-client/);
+  assert.doesNotMatch(reply.message, /CA\$39|REELS33|reply YES/);
+});
+
 test('every brand rotates three private openings and uses its own destination', () => {
   const destinations = Object.freeze({
     chaya: 'chayathemedium.org',
     ren: 'renlevyreadings.com/readings',
-    nadja: 'nadjaromawitch.store/spell-casting/',
-    david: 'davidthemystic.ca/offer',
+    nadja: 'nadjaromawitch.store/',
+    david: 'davidthemystic.ca/',
   });
   for (const [persona, destination] of Object.entries(destinations)) {
     const replies = Array.from(

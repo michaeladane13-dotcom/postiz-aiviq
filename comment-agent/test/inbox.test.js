@@ -27,6 +27,7 @@ test('templates greetings, thanks and reading inquiries while escalating risky m
 
 test('produces persona-specific inbox replies and rejects forbidden model output', () => {
   assert.match(buildSafeInboxTemplateReply('nadja', 'reading_inquiry'), /guidance/);
+  assert.match(buildSafeInboxTemplateReply('david', 'reading_inquiry'), /davidthemystic\.ca/);
   const sanitize = (value) => value.replace(/[\u2013\u2014]/g, ',');
   assert.equal(validateInboxReply('Warm and human.', sanitize), 'Warm and human.');
   assert.equal(validateInboxReply('This was automated.', sanitize), null);
@@ -46,4 +47,6 @@ test('prompt isolates exact private context and forbids introducing it', () => {
   assert.match(prompt, /Official booking page/);
   assert.match(prompt, /Never borrow a fact/);
   assert.match(prompt, /Never use an em dash/);
+  assert.match(prompt, /recommend the smallest suitable current offer/);
+  assert.match(prompt, /Never recommend a first-time or new-client offer to a returning client/);
 });

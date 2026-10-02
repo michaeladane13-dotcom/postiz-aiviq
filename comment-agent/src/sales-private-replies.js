@@ -53,7 +53,7 @@ const SALES_REPLIES = Object.freeze({
       'Hello, it’s Nadja. Your comment reached me, so I wanted you to have this:',
     ]),
     body:
-      'My current work includes tarot readings, question readings, medium sessions and spell casting. You can see the options here: https://nadjaromawitch.store/spell-casting/. Tell me what you need help with and I’ll point you to the right place. If you’d like the occasional offer from me here, reply YES.',
+      'My current work includes tarot readings, question readings, medium sessions and spell casting. You can see the options here: https://nadjaromawitch.store/. Tell me what you need help with and I’ll point you to the right place. If you’d like the occasional offer from me here, reply YES.',
     publicAcknowledgements: Object.freeze([
       'I’ve sent you a private message, lovely.',
       'Check your private messages, lovely. I’ve sent the details over.',
@@ -68,7 +68,7 @@ const SALES_REPLIES = Object.freeze({
       'Hello, it’s David. Your comment reached me, so I wanted you to have this:',
     ]),
     body:
-      'My private written readings include psychic guidance, mediumship, astrology and numerology. You can see the current options here: https://davidthemystic.ca/offer. Tell me what you’d like guidance on and I’ll point you to the right one. If you’d like the occasional offer from me here, reply YES.',
+      'My private written services include psychic guidance, mediumship, astrology, numerology and spell work. You can see the current options here: https://davidthemystic.ca/. Tell me what you’d like help with and I’ll point you to the right one. If you’d like the occasional offer from me here, reply YES.',
     publicAcknowledgements: Object.freeze([
       'I’ve sent the details to you privately.',
       'Check your private messages. I’ve sent the reading options over.',
@@ -76,6 +76,17 @@ const SALES_REPLIES = Object.freeze({
     ]),
     yesThankYou: 'Thank you. I’ll keep you posted here.',
   }),
+});
+
+const RETURNING_CLIENT_BODIES = Object.freeze({
+  chaya:
+    'Since you asked about another reading, tell me what you want guidance on and I’ll point you to the right option. You can also see the current returning-client readings here: https://chayathemedium.org/returning-clients.',
+  ren:
+    'Since you asked about another reading, tell me what you want guidance on and I’ll point you to the right option. You can also see my current readings here: https://renlevyreadings.com/readings.',
+  nadja:
+    'Since you asked about another reading or working, tell me what you need help with and I’ll point you to the right option. You can also see my current work here: https://nadjaromawitch.store/.',
+  david:
+    'Since you asked about another service, tell me what you need help with and I’ll point you to the right option. You can also see my current work here: https://davidthemystic.ca/.',
 });
 
 const SALES_KEYWORD = /\b(?:read|ready|yes|me)\b/iu;
@@ -115,16 +126,26 @@ export function isSalesTrigger(text) {
   return Boolean(normalized && (SALES_KEYWORD.test(normalized) || READING_QUESTION.test(normalized)));
 }
 
+export function isDirectSalesInterest(text) {
+  const normalized = normalize(text);
+  return Boolean(
+    /^(?:read|ready|yes|me)(?:\s|[.!?❤💜💕💖✨🙏🥰🫶])*$/iu.test(normalized) ||
+    READING_QUESTION.test(normalized)
+  );
+}
+
 export function isSalesEligibleRelationship(relationship) {
   return relationship === 'new_follower';
 }
 
-export function buildPrivateSalesReply(persona, commentId) {
+export function buildPrivateSalesReply(persona, commentId, { returningClient = false } = {}) {
   const config = salesReplyConfig(persona);
   const openingVariant = stableIndex(commentId, config.openings.length);
   return {
     openingVariant: openingVariant + 1,
-    message: `${config.openings[openingVariant]} ${config.body}`,
+    message: `${config.openings[openingVariant]} ${
+      returningClient ? RETURNING_CLIENT_BODIES[persona] : config.body
+    }`,
   };
 }
 

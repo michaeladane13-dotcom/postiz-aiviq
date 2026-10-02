@@ -18,12 +18,19 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
 - A private, public-safe client directory is refreshed from GitHub at startup and
   every four hours. Social aliases are matched exactly after case-folding, trimming
   and removing one leading `@`; fuzzy matching is intentionally forbidden.
-- Public replies use only `social-public-profiles.json` and never receive the
-  handover repository's confidential README.
+- The private `chaya-client-data` export is refreshed at startup and every three
+  hours. Its README is always fetched and verified before `clients.json`. Matching
+  uses only exact social identifiers or an exact Etsy handle, never a display name
+  or fuzzy guess. An Etsy handle is never treated as the person's name.
+- Public replies can use only a matched relationship and engagement rule from the
+  client export. They never receive dates of birth, email addresses, order details,
+  spend, situations, instructions or named people.
 - The inbox responder refreshes the confidential handover README every four hours.
-  It can use only the section belonging to an exact matched Chaya identity, only in
-  a private DM, and only as background for tone and continuity. Unresolved identities,
-  public replies, and the Ren, Nadja and David inboxes never receive that context.
+  For an exact identity match, a private DM on any of the four approved brands can
+  also receive the matching Chaya Ops client context. Private context is limited to
+  continuity and client rules, cannot be introduced unless the client raises the
+  same subject, and is never copied into a public reply. Do-not-engage, human-only,
+  no-sales and active-package rules override reply and sales logic.
 - A separate public-safe brand knowledge file is refreshed from GitHub at startup
   and every four hours. It contains exactly Chaya, Ren, Nadja and David, plus safe
   operating facts sourced from Chaya Ops. The agent then refreshes an allowlisted
@@ -38,8 +45,9 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
   and Instagram, Nadja Facebook and Instagram, and David Facebook integrations.
 - The comment sales flow uses that same seven-integration allowlist. A new follower
   who comments `READ`, `READY`, `YES`, `ME`, or asks about a reading receives a
-  price-free public acknowledgement and one private, brand-specific offer. Known
-  regulars continue through the normal relationship-aware reply path.
+  price-free public acknowledgement and one private, brand-specific offer. A known
+  regular receives a standard or returning-client path only after direct sales
+  interest, never a new-client offer. No-sales and package rules stop that path.
 - Safe greeting, gratitude and reading-inquiry templates can run without a model.
   Any other ordinary inbox message needs the configured model. Technology-identity
   questions, distress, medical/legal/financial subjects, orders and disputes go to
@@ -82,6 +90,14 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
 - `CLIENT_BRAND_KNOWLEDGE_PATH` (optional; defaults to
   `social-brand-knowledge.json`)
 - `CLIENT_HANDOVER_REF` (optional; defaults to `main`)
+- `CLIENT_DATA_GITHUB_TOKEN` (optional when the handover token also has read-only
+  contents access to `michaeladane13-dotcom/chaya-client-data`)
+- `CLIENT_DATA_REPO` (optional; defaults to
+  `michaeladane13-dotcom/chaya-client-data`)
+- `CLIENT_DATA_PATH` (optional; defaults to `clients.json`)
+- `CLIENT_DATA_README_PATH` (optional; defaults to `README.md`)
+- `CLIENT_DATA_METADATA_PATH` (optional; defaults to `README.txt`)
+- `CLIENT_DATA_REF` (optional; defaults to `main`)
 
 The Meta callback URL is `https://<service-domain>/webhooks/meta`.
 
