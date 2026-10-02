@@ -20,6 +20,7 @@ import {
   PERSONAS,
   buildReplyPrompt,
   buildSafeTemplateReply,
+  chayaBirthdayLeadDecision,
   chayaReels33Decision,
   classifyComment,
   metaSubscriptionStrategy,
@@ -1349,6 +1350,12 @@ async function processEvent(event) {
         persona: account.persona,
         postText,
         comment: event.text,
+      }) || chayaBirthdayLeadDecision({
+        persona: account.persona,
+        platform: account.platform,
+        postText,
+        comment: event.text,
+        senderId: event.senderId,
       });
       if (promotion?.action === 'review') {
         await updateEvent(event.commentId, `needs_review_${promotion.reason}`);

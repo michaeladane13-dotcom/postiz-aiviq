@@ -4,6 +4,7 @@ import {
   ACCOUNT_ROUTES,
   buildReplyPrompt,
   buildSafeTemplateReply,
+  chayaBirthdayLeadDecision,
   chayaReels33Decision,
   chayaReels33Post,
   classifyComment,
@@ -203,30 +204,54 @@ test('brief neutral-positive reactions receive a safe persona reply', () => {
   assert.doesNotMatch(reply, /\u2014/);
 });
 
-test('Chaya calendar answers receive a live-safe acknowledgement without a model', () => {
+const birthdayLeadPost =
+  'Type your birthday and I will show you the date, what it is about, and what to do on it. Free, twenty seconds. The full month comes to your inbox.';
+
+test('Chaya birthday campaign sends date answers to the reel CTA without a model', () => {
   for (const comment of ['March', 'august', 'February 7 1963', '7 February 1963', '02/07/1963']) {
-    const reply = buildSafeTemplateReply({
+    const decision = chayaBirthdayLeadDecision({
       persona: 'chaya',
+      platform: 'facebook',
+      postText: birthdayLeadPost,
       comment,
       senderId: `calendar:${comment}`,
     });
 
-    assert.match(reply, /thank you|got it/i, comment);
-    assert.doesNotMatch(reply, /reading|price|\u2014/i, comment);
+    assert.equal(decision.action, 'reply', comment);
+    assert.equal(decision.reason, 'birthday_month_lead', comment);
+    assert.match(decision.text, /sign up/i, comment);
+    assert.match(decision.text, /full month.*inbox/i, comment);
+    assert.doesNotMatch(decision.text, /price|\u2014/i, comment);
   }
 });
 
-test('calendar acknowledgement is limited to Chaya and simple date-only comments', () => {
+test('birthday campaign CTA is limited to the exact Chaya Facebook campaign', () => {
   assert.equal(
-    buildSafeTemplateReply({ persona: 'ren', comment: 'March', senderId: 'calendar-ren' }),
+    chayaBirthdayLeadDecision({
+      persona: 'ren', platform: 'facebook', postText: birthdayLeadPost, comment: 'March',
+    }),
     null
   );
   assert.equal(
-    buildSafeTemplateReply({
-      persona: 'chaya',
-      comment: 'March, will I meet someone?',
-      senderId: 'calendar-question',
+    chayaBirthdayLeadDecision({
+      persona: 'chaya', platform: 'instagram', postText: birthdayLeadPost, comment: 'March',
     }),
+    null
+  );
+  assert.equal(chayaBirthdayLeadDecision({
+    persona: 'chaya',
+    platform: 'facebook',
+    postText: 'A different post about March.',
+    comment: 'March',
+  }), null);
+  assert.equal(chayaBirthdayLeadDecision({
+    persona: 'chaya',
+    platform: 'facebook',
+    postText: birthdayLeadPost,
+    comment: 'March, will I meet someone?',
+  }), null);
+  assert.equal(
+    buildSafeTemplateReply({ persona: 'chaya', comment: 'March', senderId: 'calendar-chaya' }),
     null
   );
 });

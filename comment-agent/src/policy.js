@@ -109,10 +109,12 @@ const LOTTERY_REPLIES = Object.freeze({
     'We can see what comes through in a reading, lovely, but we don’t give out lottery numbers. If we knew those, we’d be rich too 😂',
 });
 
-const CHAYA_CALENDAR_REPLIES = Object.freeze([
-  'Thank you, lovely 💜 I’ve got it.',
-  'Got it, lovely 💜 Thank you for sharing.',
-  'Thank you for sharing, lovely 💜',
+const CHAYA_BIRTHDAY_LEAD_POST =
+  /\btype your birthday\b.{0,200}\bi will show you the date\b.{0,200}\bthe full month comes to your inbox\b/i;
+const CHAYA_BIRTHDAY_LEAD_REPLIES = Object.freeze([
+  'Got it, lovely 💜 Tap Sign up above to reveal your date, what it means and what to do. The full month will come to your inbox.',
+  'Thank you, lovely 💜 Use the Sign up button above to see your date and receive the full month in your inbox.',
+  'I’ve got it, lovely 💜 Tap Sign up above for your date and the full month in your inbox.',
 ]);
 
 function stableReplyIndex(value, size) {
@@ -134,13 +136,6 @@ export function buildSafeTemplateReply({
   if (/https?:\/\/|www\./i.test(normalized)) return null;
   if (LOTTERY_REQUEST.test(normalized) && !LOTTERY_SENSITIVE_CONTEXT.test(normalized)) {
     return sanitizeReplyText(LOTTERY_REPLIES[persona]);
-  }
-  if (persona === 'chaya' && CHAYA_CALENDAR_ANSWER.test(normalized)) {
-    return sanitizeReplyText(
-      CHAYA_CALENDAR_REPLIES[
-        stableReplyIndex(`${senderId}:${normalized}`, CHAYA_CALENDAR_REPLIES.length)
-      ]
-    );
   }
   if (normalized.includes('?')) return null;
   if (UNSAFE_TEMPLATE_SIGNAL.test(normalized)) return null;
@@ -169,6 +164,30 @@ export function chayaReels33Post(postText) {
   if (!normalized.includes('REELS33')) return 0;
   const index = CHAYA_REELS33_OPENINGS.findIndex((opening) => normalized.startsWith(opening));
   return index < 0 ? 0 : index + 1;
+}
+
+export function chayaBirthdayLeadDecision({
+  persona,
+  platform,
+  postText,
+  comment,
+  senderId = '',
+}) {
+  if (persona !== 'chaya' || platform !== 'facebook') return null;
+  const normalizedPost = normalizeComment(postText);
+  const normalizedComment = normalizeComment(comment);
+  if (!CHAYA_BIRTHDAY_LEAD_POST.test(normalizedPost)) return null;
+  if (!CHAYA_CALENDAR_ANSWER.test(normalizedComment)) return null;
+
+  return {
+    action: 'reply',
+    reason: 'birthday_month_lead',
+    text: sanitizeReplyText(
+      CHAYA_BIRTHDAY_LEAD_REPLIES[
+        stableReplyIndex(`${senderId}:${normalizedComment}`, CHAYA_BIRTHDAY_LEAD_REPLIES.length)
+      ]
+    ),
+  };
 }
 
 /** Return a curated public reply, a human-review reason, or null for ordinary policy. */
