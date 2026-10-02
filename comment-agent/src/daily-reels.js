@@ -62,7 +62,10 @@ async function jsonResponse(response, label) {
   try { data = JSON.parse(body); } catch { throw new Error(`${label}: invalid response (HTTP ${response.status})`); }
   if (!response.ok || data?.error) {
     const code = data?.error?.code || response.status;
-    throw new Error(`${label}: ${data?.error?.message || 'HTTP error'} (${code})`);
+    const message = data?.error?.message || data?.error?.error_user_msg ||
+      (typeof data?.error === 'string' ? data.error : null) ||
+      data?.message || data?.error_message || 'HTTP error';
+    throw new Error(`${label}: ${String(message).replace(/[\r\n\t]+/g, ' ').slice(0, 250)} (${code})`);
   }
   return data;
 }
@@ -186,9 +189,12 @@ export class DailyReelPublisher {
       platform TEXT NOT NULL, "scopeDay" DATE NOT NULL, status TEXT NOT NULL,
       "contentHash" TEXT NOT NULL, caption TEXT NOT NULL,
       "containerId" TEXT, "mediaId" TEXT, permalink TEXT, error TEXT,
+      "uploadRetryCount" INTEGER NOT NULL DEFAULT 0,
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(), "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY ("assetId", "integrationId"), UNIQUE (brand, platform, "scopeDay")
     )`);
+    await this.pool.query(`ALTER TABLE comment_agent."DailyReelPublication"
+      ADD COLUMN IF NOT EXISTS "uploadRetryCount" INTEGER NOT NULL DEFAULT 0`);
   }
 
   async integration(id, platform) {
@@ -272,12 +278,20 @@ export class DailyReelPublisher {
       [record.asset_id, integrationId, record.brand, platform, day, record.content_sha256, caption]);
     if (!rows.length) {
       // A failure before Meta assigned a container cannot have published a
-      // reel. This also recovers the common registry-before-release race.
+      // reel. A failed binary upload also occurs before media_publish; allow
+      // exactly one fresh-container retry, never a retry after publish starts.
       ({ rows } = await this.pool.query(
         `UPDATE comment_agent."DailyReelPublication"
-            SET status='reserved', error=NULL, "updatedAt"=NOW()
+            SET status='reserved', error=NULL,
+                "containerId"=CASE WHEN "containerId" IS NOT NULL THEN NULL ELSE "containerId" END,
+                "uploadRetryCount"=CASE WHEN "containerId" IS NOT NULL
+                  THEN "uploadRetryCount"+1 ELSE "uploadRetryCount" END,
+                "updatedAt"=NOW()
           WHERE "assetId"=$1 AND "integrationId"=$2
-            AND status='needs_review' AND "containerId" IS NULL
+            AND status='needs_review' AND "mediaId" IS NULL
+            AND ("containerId" IS NULL OR
+              (platform='instagram' AND error LIKE 'Meta binary upload:%'
+                AND "uploadRetryCount" < 1))
           RETURNING *`, [record.asset_id, integrationId]));
     }
     return Boolean(rows.length);

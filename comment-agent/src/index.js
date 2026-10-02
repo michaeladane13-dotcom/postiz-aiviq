@@ -1813,6 +1813,17 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
 });
 
+if (DAILY_REELS_ENABLED) {
+  // Replay only durable, unverified destinations. DailyReelPublisher reserves
+  // each brand/platform/day atomically and refuses uncertain published items.
+  setImmediate(() => {
+    dailyReelPublisher.run().catch((error) => console.error('daily_reel_scan_failed', error.message));
+  });
+  setInterval(() => {
+    dailyReelPublisher.run().catch((error) => console.error('daily_reel_scan_failed', error.message));
+  }, 30 * 60 * 1000).unref();
+}
+
 setInterval(async () => {
   try {
     await refreshMetaAccountState();

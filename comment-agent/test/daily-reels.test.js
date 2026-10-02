@@ -56,3 +56,29 @@ test('public Facebook probe is read-only and refuses unrelated pages', async () 
   assert.equal(calls.length, 2);
   assert.ok(calls.every((call) => call.options.method === undefined && !call.url.includes('access_token')));
 });
+
+test('Meta upload errors preserve a bounded message without printing tokens', async () => {
+  const publisher = new DailyReelPublisher({ pool: null, token: '', fetchImpl: async () =>
+    new Response(JSON.stringify({ error: 'Video upload was rejected' }), { status: 400 }) });
+  await assert.rejects(
+    () => publisher.upload('https://rupload.facebook.com/ig-api-upload/v26.0/123', 'secret', Buffer.from('x')),
+    /Meta binary upload: Video upload was rejected \(400\)/,
+  );
+});
+
+test('reservation permits one upload-stage retry but guards published media', async () => {
+  const queries = [];
+  const publisher = new DailyReelPublisher({
+    pool: { query: async (sql) => {
+      queries.push(sql);
+      return { rows: queries.length === 1 ? [] : [{ status: 'reserved' }] };
+    } },
+    token: '',
+  });
+  const reserved = await publisher.reserve({ asset_id: 'asset', brand: 'chaya', content_sha256: 'a'.repeat(64) },
+    'instagram', DAILY_REEL_ROUTES.chaya.instagram, 'caption', '2026-10-02');
+  assert.equal(reserved, true);
+  assert.match(queries[1], /error LIKE 'Meta binary upload:%'/);
+  assert.match(queries[1], /"uploadRetryCount" < 1/);
+  assert.match(queries[1], /"mediaId" IS NULL/);
+});
