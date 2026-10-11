@@ -6,6 +6,7 @@ const APPROVED_INBOX_INTEGRATIONS = new Set([
   'cmt0qpsu7000bmsb2oga61nh4',
   'cmt3axpg50003l6pa5i2lf62b',
   'cmt0rnpaa0003n4bf1mkdhe9s',
+  'cmt3bncar0001l6silkp4gruh',
 ]);
 
 const TECHNOLOGY_IDENTITY_QUESTION =
@@ -47,6 +48,18 @@ const TEMPLATES = Object.freeze({
     gratitude: 'You’re very welcome. I’m glad it helped.',
     reading_inquiry:
       'Of course. Tell me what you’d like guidance on and I’ll point you to the right option. You can also see the current services at https://davidthemystic.ca/.',
+  }),
+  kumpania: Object.freeze({
+    greeting: 'Hello from The Kumpania. How can we help you today?',
+    gratitude: 'You’re very welcome. We’re glad it helped.',
+    reading_inquiry:
+      'Of course. Tell us what you’d like guidance on and we’ll point you to the right named reader. You can also meet the current readers at https://thekumpania.com/readers.',
+  }),
+  daniel: Object.freeze({
+    greeting: 'Hello. How can I help you today?',
+    gratitude: 'You’re very welcome. I’m glad it helped.',
+    reading_inquiry:
+      'Of course. Tell me whether you’re looking for a written reading, a psychic drawing or audio work and I’ll point you to the right option. You can see my current work at https://danielpsychicartist.space/checkout.',
   }),
 });
 

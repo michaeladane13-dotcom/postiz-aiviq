@@ -1,7 +1,9 @@
 # Meta comment agent
 
 Account-locked moderation and shadow-mode persona reply drafting for the approved
-Chaya, Ren, Nadja and David Facebook/Instagram integrations.
+Chaya, Ren, Nadja, David and Daniel Facebook/Instagram integrations. The Kumpania
+has its own isolated voice and brand knowledge but remains unrouted until a
+separate Meta integration is connected in Postiz.
 
 ## Safety behaviour
 
@@ -32,8 +34,9 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
   same subject, and is never copied into a public reply. Do-not-engage, human-only,
   no-sales and active-package rules override reply and sales logic.
 - A separate public-safe brand knowledge file is refreshed from GitHub at startup
-  and every four hours. It contains exactly Chaya, Ren, Nadja and David, plus safe
-  operating facts sourced from Chaya Ops. The agent then refreshes an allowlisted
+  and every four hours. It contains exactly Chaya, Ren, Nadja, David, The Kumpania
+  and Daniel, plus safe operating facts sourced from Chaya Ops. The agent then
+  refreshes an allowlisted
   set of pages on each brand's official website and extracts only page metadata and
   structured product or service facts. It never places raw webpage body text in a
   model prompt.
@@ -42,8 +45,10 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
   from public-comment context. Inbox replies may use a price only when the latest
   official structured website data explicitly contains it.
 - Inbox handling is locked to the exact Chaya Facebook and Instagram, Ren Facebook
-  and Instagram, Nadja Facebook and Instagram, and David Facebook integrations.
-- The comment sales flow uses that same seven-integration allowlist. A new follower
+  and Instagram, Nadja Facebook and Instagram, David Facebook, and Daniel Facebook
+  integrations. The Kumpania route stays disabled until its own Meta integration is
+  connected and verified.
+- The comment sales flow uses that same eight-integration allowlist. A new follower
   who comments `READ`, `READY`, `YES`, `ME`, or asks about a reading receives a
   price-free public acknowledgement and one private, brand-specific offer. A known
   regular receives a standard or returning-client path only after direct sales
@@ -73,7 +78,7 @@ Chaya, Ren, Nadja and David Facebook/Instagram integrations.
 - `CHAYA_SALES_PRIVATE_REPLIES_ENABLED` (optional; must be exactly `true` to enable
   the approved comment-to-private-message sales flow when the newer flag is absent)
 - `SALES_PRIVATE_REPLIES_ENABLED` (optional; when present, must be exactly `true`
-  to enable the approved Chaya, Ren, Nadja and David sales flow)
+  to enable the approved account-locked sales flow)
 - `META_INBOX_RESPONDER_ENABLED` (optional; must be exactly `true` to enable the
   exact-account inbox responder)
 - `PRIVATE_REPLY_PER_MINUTE` (optional; conservative default `10` per integration)

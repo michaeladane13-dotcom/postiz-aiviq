@@ -8,9 +8,10 @@ import {
   validateInboxReply,
 } from '../src/inbox.js';
 
-test('locks inbox handling to the seven exact Chaya, Ren, Nadja and David integrations', () => {
+test('locks inbox handling to the eight exact active brand integrations', () => {
   assert.equal(isApprovedInboxAccount({ integrationId: 'cmt0qpsu7000bmsb2oga61nh4' }), true);
   assert.equal(isApprovedInboxAccount({ integrationId: 'cmt3axpg50003l6pa5i2lf62b' }), true);
+  assert.equal(isApprovedInboxAccount({ integrationId: 'cmt3bncar0001l6silkp4gruh' }), true);
   assert.equal(isApprovedInboxAccount({ integrationId: 'unknown' }), false);
 });
 
@@ -28,6 +29,8 @@ test('templates greetings, thanks and reading inquiries while escalating risky m
 test('produces persona-specific inbox replies and rejects forbidden model output', () => {
   assert.match(buildSafeInboxTemplateReply('nadja', 'reading_inquiry'), /guidance/);
   assert.match(buildSafeInboxTemplateReply('david', 'reading_inquiry'), /davidthemystic\.ca/);
+  assert.match(buildSafeInboxTemplateReply('kumpania', 'reading_inquiry'), /thekumpania\.com/);
+  assert.match(buildSafeInboxTemplateReply('daniel', 'reading_inquiry'), /danielpsychicartist\.space/);
   const sanitize = (value) => value.replace(/[\u2013\u2014]/g, ',');
   assert.equal(validateInboxReply('Warm and human.', sanitize), 'Warm and human.');
   assert.equal(validateInboxReply('This was automated.', sanitize), null);

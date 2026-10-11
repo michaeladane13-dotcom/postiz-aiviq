@@ -11,6 +11,7 @@ const SALES_ACCOUNT_ROUTES = Object.freeze({
   cmt0qpsu7000bmsb2oga61nh4: Object.freeze({ persona: 'nadja', platform: 'instagram' }),
   cmt3axpg50003l6pa5i2lf62b: Object.freeze({ persona: 'nadja', platform: 'facebook' }),
   cmt0rnpaa0003n4bf1mkdhe9s: Object.freeze({ persona: 'david', platform: 'facebook' }),
+  cmt3bncar0001l6silkp4gruh: Object.freeze({ persona: 'daniel', platform: 'facebook' }),
 });
 
 export const SALES_INTEGRATION_IDS = Object.freeze(Object.keys(SALES_ACCOUNT_ROUTES));
@@ -76,6 +77,36 @@ const SALES_REPLIES = Object.freeze({
     ]),
     yesThankYou: 'Thank you. I’ll keep you posted here.',
   }),
+  kumpania: Object.freeze({
+    openings: Object.freeze([
+      'Hello from The Kumpania. We saw your comment and wanted to send this personally:',
+      'Hi from The Kumpania. Since you asked about a reading, here is the right place to start:',
+      'Hello. Your comment reached The Kumpania, so we wanted you to have this:',
+    ]),
+    body:
+      'The Kumpania is a house of named, certified readers. You can meet the current readers and choose whose work fits you here: https://thekumpania.com/readers. Tell us what you want guidance on and we’ll point you to the right reader. If you’d like the occasional offer from us here, reply YES.',
+    publicAcknowledgements: Object.freeze([
+      'We’ve sent the details to you privately.',
+      'Check your private messages. We’ve sent the reader options over.',
+      'We’ve sent you a private message with the details.',
+    ]),
+    yesThankYou: 'Thank you. We’ll keep you posted here.',
+  }),
+  daniel: Object.freeze({
+    openings: Object.freeze([
+      'Hello, it’s Daniel. I saw your comment and wanted to send this personally:',
+      'Hi, Daniel here. Since you asked about a reading, here are my current options:',
+      'Hello, it’s Daniel. Your comment reached me, so I wanted you to have this:',
+    ]),
+    body:
+      'My current work includes psychic drawings, written readings and audio activations. You can see the options and build your basket here: https://danielpsychicartist.space/checkout. Tell me what you want help with and I’ll point you to the right one. If you’d like the occasional offer from me here, reply YES.',
+    publicAcknowledgements: Object.freeze([
+      'I’ve sent the details to you privately.',
+      'Check your private messages. I’ve sent the options over.',
+      'I’ve sent you a private message with the details.',
+    ]),
+    yesThankYou: 'Thank you. I’ll keep you posted here.',
+  }),
 });
 
 const RETURNING_CLIENT_BODIES = Object.freeze({
@@ -87,6 +118,10 @@ const RETURNING_CLIENT_BODIES = Object.freeze({
     'Since you asked about another reading or working, tell me what you need help with and I’ll point you to the right option. You can also see my current work here: https://nadjaromawitch.store/.',
   david:
     'Since you asked about another service, tell me what you need help with and I’ll point you to the right option. You can also see my current work here: https://davidthemystic.ca/.',
+  kumpania:
+    'Since you asked about working with The Kumpania again, tell us what you need help with and we’ll point you to the right named reader. You can also meet the current readers here: https://thekumpania.com/readers.',
+  daniel:
+    'Since you asked about another service, tell me what you need help with and I’ll point you to the right option. You can also see my current work here: https://danielpsychicartist.space/checkout.',
 });
 
 const SALES_KEYWORD = /\b(?:read|ready|yes|me)\b/iu;

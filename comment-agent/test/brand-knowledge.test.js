@@ -11,6 +11,8 @@ const DOMAINS = Object.freeze({
   ren: 'renlevyreadings.com',
   nadja: 'nadjaromawitch.store',
   david: 'davidthemystic.ca',
+  kumpania: 'thekumpania.com',
+  daniel: 'danielpsychicartist.space',
 });
 
 function manifest() {
@@ -29,17 +31,22 @@ function manifest() {
   };
 }
 
-test('accepts exactly the four isolated brand profiles and rejects cross-domain pages', () => {
+test('accepts exactly the six isolated brand profiles and rejects cross-domain pages', () => {
   const valid = validateBrandKnowledgeManifest(manifest());
-  assert.deepEqual(Object.keys(valid.profiles), ['chaya', 'ren', 'nadja', 'david']);
+  assert.deepEqual(Object.keys(valid.profiles), [
+    'chaya', 'ren', 'nadja', 'david', 'kumpania', 'daniel',
+  ]);
 
   const crossed = manifest();
   crossed.profiles.ren.websitePages = ['https://chayathemedium.org/shop'];
   assert.throws(() => validateBrandKnowledgeManifest(crossed), /approved renlevyreadings.com/);
 
   const extra = manifest();
-  extra.profiles.daniel = { ...extra.profiles.david };
-  assert.throws(() => validateBrandKnowledgeManifest(extra), /exactly chaya, ren, nadja and david/);
+  extra.profiles.unknown = { ...extra.profiles.david };
+  assert.throws(
+    () => validateBrandKnowledgeManifest(extra),
+    /exactly chaya, ren, nadja, david, kumpania and daniel/
+  );
 });
 
 test('extracts approved metadata and structured facts but ignores page-body instructions', () => {
@@ -93,8 +100,9 @@ test('refreshes GitHub plus official sites and keeps every persona context isola
   const publicRen = knowledge.contextFor('ren', { publicReply: true });
   assert.doesNotMatch(publicRen, /39(?:\.00)?|99|priceCurrency/);
   assert.match(publicRen, /price omitted/);
-  assert.equal(knowledge.contextFor('daniel'), '');
+  assert.match(knowledge.contextFor('daniel'), /daniel official title/);
+  assert.equal(knowledge.contextFor('unknown'), '');
   assert.equal(knowledge.status().ok, true);
-  assert.equal(knowledge.status().profilesLoaded, 4);
+  assert.equal(knowledge.status().profilesLoaded, 6);
   assert.equal(knowledge.status().refreshHours, 4);
 });

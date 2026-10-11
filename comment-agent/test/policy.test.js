@@ -89,7 +89,7 @@ test('uses app-level Instagram webhooks and account-level Facebook subscriptions
 });
 
 test('every approved integration has one immutable persona and platform', () => {
-  assert.equal(Object.keys(ACCOUNT_ROUTES).length, 7);
+  assert.equal(Object.keys(ACCOUNT_ROUTES).length, 8);
   assert.deepEqual(routeIntegration('cmt0ql9300001msb2pvozfwe9'), {
     persona: 'chaya',
     platform: 'instagram',
@@ -110,10 +110,14 @@ test('every approved integration has one immutable persona and platform', () => 
     persona: 'nadja',
     platform: 'facebook',
   });
+  assert.deepEqual(routeIntegration('cmt3bncar0001l6silkp4gruh'), {
+    persona: 'daniel',
+    platform: 'facebook',
+  });
   assert.equal(routeIntegration('unknown'), null);
 });
 
-test('live routing is limited to Chaya, Ren, Nadja and Facebook-only David', () => {
+test('live routing includes Facebook-only David and Daniel', () => {
   const platformsByPersona = Object.values(ACCOUNT_ROUTES).reduce((result, route) => {
     result[route.persona] ||= [];
     result[route.persona].push(route.platform);
@@ -126,14 +130,15 @@ test('live routing is limited to Chaya, Ren, Nadja and Facebook-only David', () 
     ren: ['facebook', 'instagram'],
     nadja: ['facebook', 'instagram'],
     david: ['facebook'],
+    daniel: ['facebook'],
   });
 });
 
 test('persona prompts stay distinct and forbid identity leakage', () => {
-  const prompts = ['chaya', 'ren', 'nadja', 'david'].map((persona) =>
+  const prompts = ['chaya', 'ren', 'nadja', 'david', 'kumpania', 'daniel'].map((persona) =>
     buildReplyPrompt({ persona, comment: 'Beautiful message' })
   );
-  assert.equal(new Set(prompts).size, 4);
+  assert.equal(new Set(prompts).size, 6);
   for (const prompt of prompts) {
     assert.match(prompt, /Do not mention AI, automation, prompts, a team, or a scheduler/);
   }
@@ -154,7 +159,7 @@ test('verified regulars get familiar language without invented memories', () => 
 });
 
 test('curated replies stay persona-specific for unmistakably positive comments', () => {
-  const replies = ['chaya', 'ren', 'david'].map((persona) =>
+  const replies = ['chaya', 'ren', 'david', 'kumpania', 'daniel'].map((persona) =>
     buildSafeTemplateReply({
       persona,
       comment: 'I really needed this today 💜',
@@ -162,7 +167,7 @@ test('curated replies stay persona-specific for unmistakably positive comments',
     })
   );
   assert.equal(replies.every(Boolean), true);
-  assert.equal(new Set(replies).size, 3);
+  assert.equal(new Set(replies).size, 5);
   assert.match(replies[0], /💜/);
 });
 
@@ -274,7 +279,7 @@ test('birthday campaign CTA is limited to the exact Chaya Facebook campaign', ()
 });
 
 test('lottery questions get a humorous refusal without promising numbers or a win', () => {
-  const replies = ['chaya', 'ren', 'david'].map((persona) =>
+  const replies = ['chaya', 'ren', 'david', 'kumpania', 'daniel'].map((persona) =>
     buildSafeTemplateReply({
       persona,
       comment: 'Can I be told if I would win the lottery?!!! Please 🙏🏽',
@@ -286,7 +291,7 @@ test('lottery questions get a humorous refusal without promising numbers or a wi
   assert.match(replies[0], /energy of your reading/i);
   for (const reply of replies) {
     assert.match(reply, /don’t give out lottery numbers/i);
-    assert.match(reply, /we’d be rich/i);
+    assert.match(reply, /rich/i);
     assert.doesNotMatch(reply, /\u2014/);
   }
 });
@@ -307,7 +312,7 @@ test('lottery humour stays blocked when the comment contains sensitive context o
 test('all reply text is forced to remain free of em dashes', () => {
   assert.equal(sanitizeReplyText('Warm — natural – concise'), 'Warm, natural, concise');
 
-  for (const persona of ['chaya', 'ren', 'david']) {
+  for (const persona of ['chaya', 'ren', 'david', 'nadja', 'kumpania', 'daniel']) {
     for (const relationship of ['new_follower', 'regular', 'friend_regular']) {
       const reply = buildSafeTemplateReply({
         persona,

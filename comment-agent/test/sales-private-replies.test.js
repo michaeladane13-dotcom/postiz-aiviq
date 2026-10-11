@@ -23,10 +23,11 @@ const SALES_ACCOUNTS = Object.freeze([
   { integrationId: 'cmt0qpsu7000bmsb2oga61nh4', persona: 'nadja', platform: 'instagram' },
   { integrationId: 'cmt3axpg50003l6pa5i2lf62b', persona: 'nadja', platform: 'facebook' },
   { integrationId: 'cmt0rnpaa0003n4bf1mkdhe9s', persona: 'david', platform: 'facebook' },
+  { integrationId: 'cmt3bncar0001l6silkp4gruh', persona: 'daniel', platform: 'facebook' },
 ]);
 
-test('sales replies are locked to the seven approved brand integrations', () => {
-  assert.equal(SALES_INTEGRATION_IDS.length, 7);
+test('sales replies are locked to the eight approved brand integrations', () => {
+  assert.equal(SALES_INTEGRATION_IDS.length, 8);
   for (const account of SALES_ACCOUNTS) assert.equal(isSalesAccount(account), true);
   assert.equal(isSalesAccount({
     integrationId: 'cmt0rnpaa0003n4bf1mkdhe9s', persona: 'david', platform: 'instagram',
@@ -80,6 +81,8 @@ test('every brand rotates three private openings and uses its own destination', 
     ren: 'renlevyreadings.com/readings',
     nadja: 'nadjaromawitch.store/',
     david: 'davidthemystic.ca/',
+    kumpania: 'thekumpania.com/readers',
+    daniel: 'danielpsychicartist.space/checkout',
   });
   for (const [persona, destination] of Object.entries(destinations)) {
     const replies = Array.from(
@@ -102,7 +105,7 @@ test('Chaya keeps the approved new-client offer in private only', () => {
 });
 
 test('public acknowledgements never contain a price or sales link', () => {
-  for (const persona of ['chaya', 'ren', 'nadja', 'david']) {
+  for (const persona of ['chaya', 'ren', 'nadja', 'david', 'kumpania', 'daniel']) {
     for (let index = 0; index < 20; index += 1) {
       const reply = buildSalesPublicReply(persona, `comment-${index}`);
       assert.match(reply, /private/i);
@@ -144,7 +147,7 @@ test('YES opt-ins are strict and each thank-you stays safe and one line', () => 
   for (const text of ['yes please', 'yesterday', 'I said yes and need help']) {
     assert.equal(isYesOptIn(text), false, text);
   }
-  for (const persona of ['chaya', 'ren', 'nadja', 'david']) {
+  for (const persona of ['chaya', 'ren', 'nadja', 'david', 'kumpania', 'daniel']) {
     const thankYou = buildSalesOptInThankYou(persona);
     assert.equal(thankYou.includes('\n'), false);
     assert.doesNotMatch(thankYou, /\u2014|\bAI\b|automation|\bfluff\b/i);

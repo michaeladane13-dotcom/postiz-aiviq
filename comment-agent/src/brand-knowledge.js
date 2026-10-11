@@ -1,4 +1,11 @@
-const APPROVED_PERSONAS = Object.freeze(['chaya', 'ren', 'nadja', 'david']);
+const APPROVED_PERSONAS = Object.freeze([
+  'chaya',
+  'ren',
+  'nadja',
+  'david',
+  'kumpania',
+  'daniel',
+]);
 const ALLOWED_SCHEMA_TYPES = new Set(['Product', 'Service', 'Offer', 'Organization', 'Person']);
 const MAX_MANIFEST_BYTES = 100_000;
 const MAX_PAGE_BYTES = 2_000_000;
@@ -70,7 +77,9 @@ export function validateBrandKnowledgeManifest(input) {
   const receivedPersonas = Object.keys(input.profiles).sort();
   const expectedPersonas = [...APPROVED_PERSONAS].sort();
   if (JSON.stringify(receivedPersonas) !== JSON.stringify(expectedPersonas)) {
-    throw new Error('Brand knowledge must contain exactly chaya, ren, nadja and david');
+    throw new Error(
+      'Brand knowledge must contain exactly chaya, ren, nadja, david, kumpania and daniel'
+    );
   }
 
   const profiles = {};

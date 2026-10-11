@@ -96,6 +96,36 @@ const CURATED_REPLIES = Object.freeze({
       'So good to see you here again. I’m glad this landed.',
     ]),
   }),
+  kumpania: Object.freeze({
+    new_follower: Object.freeze([
+      'Thank you. We’re glad this reached you.',
+      'Thank you for being here. We’re glad it resonated.',
+      'That means a lot. Welcome to The Kumpania.',
+    ]),
+    regular: Object.freeze([
+      'Lovely to see you here again. We’re glad this resonated.',
+      'Thank you for coming back to share that. We’re glad it landed.',
+    ]),
+    friend_regular: Object.freeze([
+      'Always lovely to see you here. We’re glad this one resonated.',
+      'So good to see you here again. We’re glad this landed.',
+    ]),
+  }),
+  daniel: Object.freeze({
+    new_follower: Object.freeze([
+      'Thank you. I’m glad the work resonated with you.',
+      'That means a lot. I’m glad the work connected with you.',
+      'Thank you for being here. I’m glad the work found you.',
+    ]),
+    regular: Object.freeze([
+      'Good to see you here again. I’m glad this resonated.',
+      'Thank you for returning and sharing that. I’m glad it connected.',
+    ]),
+    friend_regular: Object.freeze([
+      'Always good to see you here. I’m glad this one resonated.',
+      'Good to hear from you again. I’m glad this landed.',
+    ]),
+  }),
 });
 
 const LOTTERY_REPLIES = Object.freeze({
@@ -107,6 +137,10 @@ const LOTTERY_REPLIES = Object.freeze({
     'We can explore what comes through in a reading, but we don’t give out lottery numbers. If we knew those, we’d be rich too 😂',
   nadja:
     'We can see what comes through in a reading, lovely, but we don’t give out lottery numbers. If we knew those, we’d be rich too 😂',
+  kumpania:
+    'We can explore what comes through with the reader on duty, but we don’t give out lottery numbers. If we knew those, we’d be rich already 😂',
+  daniel:
+    'We can explore what comes through in a reading, but I don’t give out lottery numbers. If I knew those, I’d be rich already 😂',
 });
 
 const CHAYA_BIRTHDAY_LEAD_POST =
@@ -253,6 +287,7 @@ export const ACCOUNT_ROUTES = Object.freeze({
   cmt0qpsu7000bmsb2oga61nh4: Object.freeze({ persona: 'nadja', platform: 'instagram' }),
   cmt3axpg50003l6pa5i2lf62b: Object.freeze({ persona: 'nadja', platform: 'facebook' }),
   cmt0rnpaa0003n4bf1mkdhe9s: Object.freeze({ persona: 'david', platform: 'facebook' }),
+  cmt3bncar0001l6silkp4gruh: Object.freeze({ persona: 'daniel', platform: 'facebook' }),
 });
 
 export function routeIntegration(integrationId) {
@@ -297,6 +332,16 @@ export const PERSONAS = Object.freeze({
     displayName: 'Nadja',
     voice:
       'Warm, grounded, direct and intuitive. Keep replies concise and natural, with gentle mystical language. Avoid copying Chaya, Ren or David. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Never use em dashes. Do not sign the reply.',
+  }),
+  kumpania: Object.freeze({
+    displayName: 'The Kumpania',
+    voice:
+      'Warm, grounded and collective, speaking as a house of named readers rather than as one individual. Keep replies concise and clear. Never imply that an unnamed or anonymous reader will handle the work. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Never use em dashes. Do not sign the reply.',
+  }),
+  daniel: Object.freeze({
+    displayName: 'Daniel',
+    voice:
+      'Calm, artistic, direct and thoughtful, with understated intuitive language. Keep replies brief and personal. Mention drawings, written readings or audio work only when supported by the active brand reference. Avoid copying Chaya, Ren, David or Nadja. Never claim certainty about another person’s future, health, legal situation or finances. Do not mention AI, automation, prompts, a team, or a scheduler. Never use em dashes. Do not sign the reply.',
   }),
 });
 
