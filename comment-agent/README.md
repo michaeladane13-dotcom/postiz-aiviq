@@ -1,9 +1,7 @@
 # Meta comment agent
 
 Account-locked moderation and shadow-mode persona reply drafting for the approved
-Chaya, Ren, Nadja, David and Daniel Facebook/Instagram integrations. The Kumpania
-has its own isolated voice and brand knowledge but remains unrouted until a
-separate Meta integration is connected in Postiz.
+Chaya, Ren, Nadja, David, The Kumpania and Daniel Facebook/Instagram integrations.
 
 ## Safety behaviour
 
@@ -28,7 +26,7 @@ separate Meta integration is connected in Postiz.
   client export. They never receive dates of birth, email addresses, order details,
   spend, situations, instructions or named people.
 - The inbox responder refreshes the confidential handover README every four hours.
-  For an exact identity match, a private DM on any of the four approved brands can
+  For an exact identity match, a private DM on any of the six approved brands can
   also receive the matching Chaya Ops client context. Private context is limited to
   continuity and client rules, cannot be introduced unless the client raises the
   same subject, and is never copied into a public reply. Do-not-engage, human-only,
@@ -45,10 +43,9 @@ separate Meta integration is connected in Postiz.
   from public-comment context. Inbox replies may use a price only when the latest
   official structured website data explicitly contains it.
 - Inbox handling is locked to the exact Chaya Facebook and Instagram, Ren Facebook
-  and Instagram, Nadja Facebook and Instagram, David Facebook, and Daniel Facebook
-  integrations. The Kumpania route stays disabled until its own Meta integration is
-  connected and verified.
-- The comment sales flow uses that same eight-integration allowlist. A new follower
+  and Instagram, Nadja Facebook and Instagram, David Facebook, Daniel Facebook,
+  and The Kumpania Facebook integrations.
+- The comment sales flow uses that same nine-integration allowlist. A new follower
   who comments `READ`, `READY`, `YES`, `ME`, or asks about a reading receives a
   price-free public acknowledgement and one private, brand-specific offer. A known
   regular receives a standard or returning-client path only after direct sales

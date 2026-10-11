@@ -7,6 +7,7 @@ const APPROVED_INBOX_INTEGRATIONS = new Set([
   'cmt3axpg50003l6pa5i2lf62b',
   'cmt0rnpaa0003n4bf1mkdhe9s',
   'cmt3bncar0001l6silkp4gruh',
+  'cmuhnbkiw0001mtddcb6vugex',
 ]);
 
 const TECHNOLOGY_IDENTITY_QUESTION =

@@ -89,7 +89,7 @@ test('uses app-level Instagram webhooks and account-level Facebook subscriptions
 });
 
 test('every approved integration has one immutable persona and platform', () => {
-  assert.equal(Object.keys(ACCOUNT_ROUTES).length, 8);
+  assert.equal(Object.keys(ACCOUNT_ROUTES).length, 9);
   assert.deepEqual(routeIntegration('cmt0ql9300001msb2pvozfwe9'), {
     persona: 'chaya',
     platform: 'instagram',
@@ -114,10 +114,14 @@ test('every approved integration has one immutable persona and platform', () => 
     persona: 'daniel',
     platform: 'facebook',
   });
+  assert.deepEqual(routeIntegration('cmuhnbkiw0001mtddcb6vugex'), {
+    persona: 'kumpania',
+    platform: 'facebook',
+  });
   assert.equal(routeIntegration('unknown'), null);
 });
 
-test('live routing includes Facebook-only David and Daniel', () => {
+test('live routing includes Facebook-only David, Daniel and Kumpania', () => {
   const platformsByPersona = Object.values(ACCOUNT_ROUTES).reduce((result, route) => {
     result[route.persona] ||= [];
     result[route.persona].push(route.platform);
@@ -131,6 +135,7 @@ test('live routing includes Facebook-only David and Daniel', () => {
     nadja: ['facebook', 'instagram'],
     david: ['facebook'],
     daniel: ['facebook'],
+    kumpania: ['facebook'],
   });
 });
 

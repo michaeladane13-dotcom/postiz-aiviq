@@ -288,6 +288,7 @@ export const ACCOUNT_ROUTES = Object.freeze({
   cmt3axpg50003l6pa5i2lf62b: Object.freeze({ persona: 'nadja', platform: 'facebook' }),
   cmt0rnpaa0003n4bf1mkdhe9s: Object.freeze({ persona: 'david', platform: 'facebook' }),
   cmt3bncar0001l6silkp4gruh: Object.freeze({ persona: 'daniel', platform: 'facebook' }),
+  cmuhnbkiw0001mtddcb6vugex: Object.freeze({ persona: 'kumpania', platform: 'facebook' }),
 });
 
 export function routeIntegration(integrationId) {

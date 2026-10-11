@@ -8,10 +8,11 @@ import {
   validateInboxReply,
 } from '../src/inbox.js';
 
-test('locks inbox handling to the eight exact active brand integrations', () => {
+test('locks inbox handling to the nine exact active brand integrations', () => {
   assert.equal(isApprovedInboxAccount({ integrationId: 'cmt0qpsu7000bmsb2oga61nh4' }), true);
   assert.equal(isApprovedInboxAccount({ integrationId: 'cmt3axpg50003l6pa5i2lf62b' }), true);
   assert.equal(isApprovedInboxAccount({ integrationId: 'cmt3bncar0001l6silkp4gruh' }), true);
+  assert.equal(isApprovedInboxAccount({ integrationId: 'cmuhnbkiw0001mtddcb6vugex' }), true);
   assert.equal(isApprovedInboxAccount({ integrationId: 'unknown' }), false);
 });
 
