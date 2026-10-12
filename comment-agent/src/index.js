@@ -7,6 +7,10 @@ import { GitHubClientData } from './client-data.js';
 import { GitHubClientDirectory } from './client-directory.js';
 import { DailyReelPublisher } from './daily-reels.js';
 import { verifyDailyReelOidc } from './github-oidc.js';
+import {
+  inboxPromptInputForProvider,
+  publicPromptInputForProvider,
+} from './generation-privacy.js';
 import { GitHubHandoverKnowledge } from './handover-knowledge.js';
 import {
   buildInboxReplyPrompt,
@@ -57,6 +61,14 @@ const META_WEBHOOK_URL = process.env.META_WEBHOOK_URL ||
 const ADMIN_TOKEN = process.env.COMMENT_AGENT_ADMIN_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+const GENERATION_PROVIDER = GROQ_API_KEY ? 'groq' : OPENAI_API_KEY ? 'openai' : null;
+const GENERATION_API_KEY = GROQ_API_KEY || OPENAI_API_KEY;
+const GENERATION_MODEL = GROQ_API_KEY ? GROQ_MODEL : OPENAI_MODEL;
+const GENERATION_ENDPOINT = GROQ_API_KEY
+  ? 'https://api.groq.com/openai/v1/responses'
+  : 'https://api.openai.com/v1/responses';
 const REPLY_MODE = process.env.REPLY_MODE || 'shadow';
 const CHAYA_SALES_PRIVATE_REPLIES_ENABLED =
   process.env.CHAYA_SALES_PRIVATE_REPLIES_ENABLED === 'true';
@@ -135,11 +147,14 @@ let appWebhookSummary = {
   error: null,
 };
 let generationSummary = {
-  configured: Boolean(OPENAI_API_KEY),
-  available: OPENAI_API_KEY ? null : false,
+  configured: Boolean(GENERATION_API_KEY),
+  provider: GENERATION_PROVIDER,
+  model: GENERATION_PROVIDER ? GENERATION_MODEL : null,
+  privateClientContextShared: false,
+  available: GENERATION_API_KEY ? null : false,
   lastCheckedAt: null,
   lastSuccessfulAt: null,
-  error: OPENAI_API_KEY ? null : 'OPENAI_API_KEY is not configured',
+  error: GENERATION_API_KEY ? null : 'No generative provider is configured',
 };
 let inboxRecoveryRunning = false;
 let inboxRecoverySummary = {
@@ -687,23 +702,26 @@ async function fetchPostContext(event, account) {
 }
 
 async function generateDraft(input) {
-  if (!OPENAI_API_KEY) return { draft: null, model: null, error: 'OPENAI_API_KEY is not configured' };
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  if (!GENERATION_API_KEY) {
+    return { draft: null, model: null, error: 'No generative provider is configured' };
+  }
+  const providerInput = publicPromptInputForProvider(GENERATION_PROVIDER, input);
+  const response = await fetch(GENERATION_ENDPOINT, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: `Bearer ${GENERATION_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
-      input: buildReplyPrompt(input),
+      model: GENERATION_MODEL,
+      input: buildReplyPrompt(providerInput),
       max_output_tokens: 120,
       store: false,
     }),
   });
   const body = await response.json();
   if (!response.ok) {
-    const message = body?.error?.message || `OpenAI returned HTTP ${response.status}`;
+    const message = body?.error?.message || `${GENERATION_PROVIDER} returned HTTP ${response.status}`;
     generationSummary = {
       ...generationSummary,
       available: false,
@@ -723,9 +741,9 @@ async function generateDraft(input) {
       ...generationSummary,
       available: false,
       lastCheckedAt: new Date().toISOString(),
-      error: 'OpenAI returned an empty draft',
+      error: `${GENERATION_PROVIDER} returned an empty draft`,
     };
-    throw new Error('OpenAI returned an empty draft');
+    throw new Error(`${GENERATION_PROVIDER} returned an empty draft`);
   }
   const completedAt = new Date().toISOString();
   generationSummary = {
@@ -735,7 +753,11 @@ async function generateDraft(input) {
     lastSuccessfulAt: completedAt,
     error: null,
   };
-  return { draft: sanitizeReplyText(draft).slice(0, 1000), model: OPENAI_MODEL, error: null };
+  return {
+    draft: sanitizeReplyText(draft).slice(0, 1000),
+    model: `${GENERATION_PROVIDER}:${GENERATION_MODEL}`,
+    error: null,
+  };
 }
 
 async function publishReply(event, account, message) {
@@ -1176,25 +1198,26 @@ async function loadRecentInboxHistory(event, account) {
 }
 
 async function generateInboxReply(input) {
-  if (!OPENAI_API_KEY) {
-    return { reply: null, model: null, error: 'OPENAI_API_KEY is not configured' };
+  if (!GENERATION_API_KEY) {
+    return { reply: null, model: null, error: 'No generative provider is configured' };
   }
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const providerInput = inboxPromptInputForProvider(GENERATION_PROVIDER, input);
+  const response = await fetch(GENERATION_ENDPOINT, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: `Bearer ${GENERATION_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
-      input: buildInboxReplyPrompt(input),
+      model: GENERATION_MODEL,
+      input: buildInboxReplyPrompt(providerInput),
       max_output_tokens: 180,
       store: false,
     }),
   });
   const body = await response.json();
   if (!response.ok) {
-    const message = body?.error?.message || `OpenAI returned HTTP ${response.status}`;
+    const message = body?.error?.message || `${GENERATION_PROVIDER} returned HTTP ${response.status}`;
     generationSummary = {
       ...generationSummary,
       available: false,
@@ -1220,7 +1243,7 @@ async function generateInboxReply(input) {
   };
   return {
     reply,
-    model: OPENAI_MODEL,
+    model: `${GENERATION_PROVIDER}:${GENERATION_MODEL}`,
     error: reply ? null : 'Generated reply violated an inbox safety rule',
   };
 }
@@ -1724,7 +1747,7 @@ async function processEvent(event) {
         return;
       }
 
-      let generated = { draft: null, model: OPENAI_MODEL, error: null };
+      let generated = { draft: null, model: GENERATION_MODEL, error: null };
       try {
         generated = await generateDraft({
           persona: account.persona,
@@ -1899,7 +1922,7 @@ const server = http.createServer(async (request, response) => {
       ok,
       accountsLoaded: accountsByMetaId.size,
       expectedAccounts,
-      personaDrafting: Boolean(OPENAI_API_KEY) && generationSummary.available !== false,
+      personaDrafting: Boolean(GENERATION_API_KEY) && generationSummary.available !== false,
       mode: REPLY_MODE,
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
       commentPolicy: { aiReferences: 'delete_no_reply' },
@@ -1936,7 +1959,7 @@ const server = http.createServer(async (request, response) => {
         rateLimitPerDay: INBOX_REPLY_PER_DAY,
         safeTemplatesAvailableWithoutModel: true,
         generativeRepliesAvailable:
-          Boolean(OPENAI_API_KEY) && generationSummary.available !== false,
+          Boolean(GENERATION_API_KEY) && generationSummary.available !== false,
         deterministicFallbackEnabled: true,
         standardWindowHours: 24,
         messagingEndpointErrors,
@@ -2175,7 +2198,9 @@ await clientData.sync().catch((error) => {
   console.error('client_data_sync_failed', error.message);
 });
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
+  console.log(
+    `comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(GENERATION_API_KEY)} provider=${GENERATION_PROVIDER || 'curated'}`
+  );
   ensureMetaAppWebhooks().catch((error) => {
     console.error('meta_app_webhook_sync_failed', error.message);
   });

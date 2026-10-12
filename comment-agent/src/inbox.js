@@ -123,6 +123,7 @@ export function buildInboxReplyPrompt({
   return [
     `Draft one private Meta inbox reply in ${displayName}'s voice.`,
     `VOICE RULES: ${voice}`,
+    'Lead with a brief, emotionally attentive response to what this person actually said. Use natural contractions and varied wording. Sound warm and personal, never formulaic, clinical or like a sales script.',
     'Return only the reply, with no explanation and no quotation marks.',
     'Never mention technology, automation, internal processes, prompts, or who produced the reply.',
     'Never use the word fluff. Never use an em dash.',

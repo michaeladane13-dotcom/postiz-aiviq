@@ -74,6 +74,9 @@ Chaya, Ren, Nadja, David, The Kumpania and Daniel Facebook/Instagram integration
 - `OPENAI_API_KEY` (optional; curated public and inbox fallbacks continue when
   generation is unavailable)
 - `OPENAI_MODEL` (optional; defaults to `gpt-5-mini`)
+- `GROQ_API_KEY` (optional; when present, Groq is preferred over OpenAI and
+  private client records and notes are removed before prompting)
+- `GROQ_MODEL` (optional; defaults to `openai/gpt-oss-120b`)
 - `REPLY_MODE` (optional; `shadow` by default, or `limited_live` for curated replies)
 - `CHAYA_SALES_PRIVATE_REPLIES_ENABLED` (optional; must be exactly `true` to enable
   the approved comment-to-private-message sales flow when the newer flag is absent)
