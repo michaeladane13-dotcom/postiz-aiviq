@@ -3,6 +3,15 @@ import http from 'node:http';
 import { Pool } from 'pg';
 import { BufferApi } from './buffer.js';
 import { GitHubBrandKnowledge } from './brand-knowledge.js';
+import {
+  asksWhereChayaCardLink,
+  buildChayaCardReadingFollowUp,
+  chayaCardKeyword,
+  chayaCardThreadPromptRule,
+  conversationHasChayaCardBotMessage,
+  isChayaCardKeywordComment,
+  validateChayaCardFollowUpReply,
+} from './chaya-card-handoff.js';
 import { GitHubClientData } from './client-data.js';
 import { GitHubClientDirectory } from './client-directory.js';
 import { DailyReelPublisher } from './daily-reels.js';
@@ -350,6 +359,14 @@ async function migrate() {
       "metaMarketingOptInAt" TIMESTAMPTZ,
       "marketingStatus" TEXT NOT NULL DEFAULT 'local_yes_only',
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY ("integrationId", "recipientId")
+    );
+    CREATE TABLE IF NOT EXISTS comment_agent."ChayaCardThread" (
+      "integrationId" TEXT NOT NULL,
+      "recipientId" TEXT NOT NULL,
+      "sourceMessageId" TEXT,
+      "detectedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY ("integrationId", "recipientId")
     );
@@ -1197,6 +1214,80 @@ async function loadRecentInboxHistory(event, account) {
   }));
 }
 
+function compactConversationMessages(messages, brandIds) {
+  const ids = new Set(brandIds.map(String));
+  return (messages || [])
+    .filter((message) => String(message?.message || '').trim())
+    .sort((left, right) => Date.parse(left.created_time || 0) - Date.parse(right.created_time || 0))
+    .slice(-12)
+    .map((message) => ({
+      speaker: ids.has(String(message?.from?.id || '')) ? 'Chaya' : 'customer',
+      message: String(message.message).slice(0, 2_000),
+    }));
+}
+
+async function loadChayaCardThreadContext(event, account) {
+  if (account.persona !== 'chaya') return { isCardThread: false, recentHistory: [] };
+  const known = await pool.query(
+    `SELECT "sourceMessageId"
+       FROM comment_agent."ChayaCardThread"
+      WHERE "integrationId"=$1 AND "recipientId"=$2`,
+    [account.integrationId, event.senderId]
+  );
+  const endpointId = account.messagingEndpointId ||
+    (account.platform === 'facebook' ? account.metaAccountId : null);
+  const brandIds = [account.metaAccountId, endpointId].filter(Boolean).map(String);
+  const suppliedMessages = Array.isArray(event.raw?.conversationMessages)
+    ? event.raw.conversationMessages
+    : [];
+  if (known.rowCount > 0 && suppliedMessages.length === 0) {
+    return { isCardThread: true, recentHistory: [] };
+  }
+
+  let messages = suppliedMessages;
+  if (!messages.length && endpointId) {
+    try {
+      const fields = encodeURIComponent(
+        'id,messages.limit(50){id,message,from,to,created_time}'
+      );
+      const platform = account.platform === 'instagram' ? '&platform=instagram' : '';
+      const result = await graphRequest(
+        `${encodeURIComponent(endpointId)}/conversations?fields=${fields}&user_id=${encodeURIComponent(event.senderId)}&limit=1${platform}`,
+        account.accessToken
+      );
+      messages = result?.data?.[0]?.messages?.data || [];
+    } catch (error) {
+      return {
+        isCardThread: known.rowCount > 0,
+        recentHistory: [],
+        error: String(error.message).slice(0, 500),
+      };
+    }
+  }
+
+  const detected = known.rowCount > 0 || conversationHasChayaCardBotMessage(messages, brandIds);
+  if (detected && known.rowCount === 0) {
+    const source = messages.find((message) =>
+      brandIds.includes(String(message?.from?.id || '')) &&
+      String(message?.message || '').startsWith('Chaya here.\n\n')
+    );
+    await pool.query(
+      `INSERT INTO comment_agent."ChayaCardThread"
+        ("integrationId", "recipientId", "sourceMessageId")
+       VALUES ($1,$2,$3)
+       ON CONFLICT ("integrationId", "recipientId") DO UPDATE
+         SET "sourceMessageId"=COALESCE(EXCLUDED."sourceMessageId", comment_agent."ChayaCardThread"."sourceMessageId"),
+             "updatedAt"=NOW()`,
+      [account.integrationId, event.senderId, source?.id || null]
+    );
+  }
+  return {
+    isCardThread: detected,
+    recentHistory: compactConversationMessages(messages, brandIds),
+    error: null,
+  };
+}
+
 async function generateInboxReply(input) {
   if (!GENERATION_API_KEY) {
     return { reply: null, model: null, error: 'No generative provider is configured' };
@@ -1337,14 +1428,18 @@ async function processInboxReply(event, account, senderProfile) {
     username: senderProfile.username,
     senderId: event.senderId,
   });
+  const cardThread = await loadChayaCardThreadContext(event, account);
   const decision = classifyInboxMessage(event.text);
+  const replyCategory = cardThread.isCardThread
+    ? `chaya_card_followup_${decision.category}`
+    : decision.category;
   if (!(await reserveInboxReply({
     event,
     account,
     senderProfile,
     directoryProfile,
     opsProfile,
-    category: decision.category,
+    category: replyCategory,
   }))) return;
 
   const clientEngagement = strongestEngagement(
@@ -1365,15 +1460,25 @@ async function processInboxReply(event, account, senderProfile) {
     return;
   }
 
-  let reply = (
-    decision.action === 'template' && decision.category !== 'reading_inquiry'
-  )
-    ? buildSafeInboxTemplateReply(account.persona, decision.category)
+  const linkRequested = cardThread.isCardThread && asksWhereChayaCardLink(event.text);
+  let reply = cardThread.isCardThread &&
+    (linkRequested || decision.category === 'reading_inquiry')
+    ? buildChayaCardReadingFollowUp(event.text)
+    : (
+      decision.action === 'template' && decision.category !== 'reading_inquiry'
+    )
+      ? buildSafeInboxTemplateReply(account.persona, decision.category)
+      : null;
+  let model = reply
+    ? cardThread.isCardThread
+      ? 'curated-chaya-card-followup-v1'
+      : 'curated-inbox-v1'
     : null;
-  let model = reply ? 'curated-inbox-v1' : null;
   let generationError = null;
   if (!reply) {
-    const recentHistory = await loadRecentInboxHistory(event, account);
+    const recentHistory = cardThread.recentHistory.length
+      ? cardThread.recentHistory
+      : await loadRecentInboxHistory(event, account);
     const verifiedSenderName = opsProfile
       ? opsProfile.firstName
       : directoryProfile?.clientLabel || senderProfile.name;
@@ -1390,8 +1495,11 @@ async function processInboxReply(event, account, senderProfile) {
         recentHistory,
         brandContext: brandKnowledge.contextFor(account.persona),
         privateClientContext: privateContext,
+        conversationRule: chayaCardThreadPromptRule(cardThread.isCardThread),
       });
-      reply = generated.reply;
+      reply = cardThread.isCardThread
+        ? validateChayaCardFollowUpReply(generated.reply, { linkRequested })
+        : generated.reply;
       model = generated.model;
       generationError = generated.error;
     } catch (error) {
@@ -1523,6 +1631,12 @@ async function syncInboxBacklog() {
               source: 'conversation_recovery',
               conversationId: String(conversation.id || ''),
               updatedTime: conversation.updated_time || null,
+              conversationMessages: messages.map((message) => ({
+                id: String(message.id || ''),
+                message: String(message.message || '').slice(0, 2_000),
+                from: { id: String(message.from?.id || '') },
+                created_time: message.created_time || null,
+              })),
             },
           });
           recovered += 1;
@@ -1624,6 +1738,14 @@ async function processEvent(event) {
   if (decision.action === 'delete') {
     const result = await deleteOrHide(event, account);
     await updateEvent(event.commentId, result.status, result.error);
+    return;
+  }
+
+  if (isChayaCardKeywordComment(event, account)) {
+    await updateEvent(
+      event.commentId,
+      `delegated_chaya_card_dm_${chayaCardKeyword(event.text).toLowerCase()}`
+    );
     return;
   }
 

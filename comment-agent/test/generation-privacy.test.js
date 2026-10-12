@@ -16,6 +16,7 @@ test('Groq public prompts cannot receive private relationship fields', () => {
 
   assert.equal(safe.relationship, 'new_follower');
   assert.equal(safe.relationshipNotes, '');
+  assert.equal(safe.username, '');
   assert.equal(safe.comment, 'I had a dream last night');
   assert.equal(safe.brandContext, 'Public offer information');
   assert.equal(safe.recentHistory.length, 1);
@@ -26,10 +27,12 @@ test('Groq inbox prompts cannot receive private client records or notes', () => 
     message: 'Can you tell me about a reading?',
     recentHistory: [{ inbound: 'Hello', reply: 'Hello lovely' }],
     brandContext: 'Public offer information',
+    senderName: 'Private client name',
     privateClientContext: 'PRIVATE CLIENT RECORD',
   });
 
   assert.equal(safe.privateClientContext, '');
+  assert.equal(safe.senderName, '');
   assert.equal(safe.message, 'Can you tell me about a reading?');
   assert.equal(safe.brandContext, 'Public offer information');
   assert.equal(safe.recentHistory.length, 1);

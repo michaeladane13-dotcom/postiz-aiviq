@@ -1,0 +1,10 @@
+[Unit]
+Description=Check for missed Chaya keyword private replies every two minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+Unit=chaya-comment-dm-watchdog.service
+
+[Install]
+WantedBy=timers.target

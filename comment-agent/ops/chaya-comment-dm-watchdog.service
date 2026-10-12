@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch Chaya keyword comments for missed private replies
+After=network-online.target chaya-comment-dm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/chaya-marketing/chaya_comment_dm_watchdog.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/chaya-marketing /opt/chaya-marketing
+ReadWritePaths=/var/lib/chaya-marketing

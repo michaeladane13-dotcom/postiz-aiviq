@@ -50,6 +50,7 @@ test('prompt isolates exact private context and forbids introducing it', () => {
     message: 'Hello',
     brandContext: 'Active brand account: chaya. Official booking page: https://chayathemedium.org/shop',
     privateClientContext: 'PRIVATE CONTEXT: exact match only',
+    conversationRule: 'Do not repeat the card link.',
   });
   assert.match(prompt, /exact match only/);
   assert.match(prompt, /Never reveal it/);
@@ -58,4 +59,5 @@ test('prompt isolates exact private context and forbids introducing it', () => {
   assert.match(prompt, /Never use an em dash/);
   assert.match(prompt, /recommend the smallest suitable current offer/);
   assert.match(prompt, /Never recommend a first-time or new-client offer to a returning client/);
+  assert.match(prompt, /Do not repeat the card link/);
 });
