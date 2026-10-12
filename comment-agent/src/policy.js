@@ -34,6 +34,8 @@ const LOTTERY_SENSITIVE_CONTEXT =
   /\b(?:death|died|suicid|doctor|medical|legal|lawyer|pregnan|refund|scam|hate)\b/i;
 const UNSAFE_TEMPLATE_SIGNAL =
   /\b(?:but|however|not|never|no|wrong|fake|scam|hate|disagree|problem|issue|refund|money|price|cost|health|doctor|medical|legal|lawyer|suicid|die|death|pregnan|future|when|where|why|how|who|what|can|could|would|should|will|please\s+tell|reading|book|appointment)\b/i;
+const UNSAFE_FALLBACK_SIGNAL =
+  /\b(?:refund|chargeback|charged|payment|paid|order|delivery|delivered|never\s+received|didn'?t\s+receive|missing\s+reading|scam|fraud|complaint|problem|issue|wrong|disagree|not\s+true|no\s+thanks|stop|spam|angry|upset|disappointed|doctor|medical|diagnos|medication|pregnan|lawyer|legal|court|police|suicid|kill\s+myself|self[- ]?harm|hate|fake)\b/i;
 
 const CURATED_REPLIES = Object.freeze({
   chaya: Object.freeze({
@@ -143,6 +145,33 @@ const LOTTERY_REPLIES = Object.freeze({
     'We can explore what comes through in a reading, but I don’t give out lottery numbers. If I knew those, I’d be rich already 😂',
 });
 
+const FALLBACK_PUBLIC_REPLIES = Object.freeze({
+  chaya: Object.freeze([
+    'Thanks for sharing that, lovely 💜 If you’d like to explore what comes through for you, message me and I’ll point you to the right reading.',
+    'Thank you, lovely 💜 If you want to look at this more closely in a reading, send me a message and I’ll help you choose the right option.',
+  ]),
+  ren: Object.freeze([
+    'Thank you for sharing that. If you’d like to explore it more deeply in a reading, send me a message and I’ll point you to the right option.',
+    'I appreciate you sharing this. Message me if you’d like to look at it more closely in a reading, and I’ll help with the next step.',
+  ]),
+  nadja: Object.freeze([
+    'Thank you for sharing that, lovely. If you’d like guidance on it, message me and I’ll point you to the right reading.',
+    'I’m glad you shared this. Send me a message if you’d like to explore it in a reading and I’ll help you choose the right option.',
+  ]),
+  david: Object.freeze([
+    'Thank you for sharing that. If you’d like guidance on it, send me a message and I’ll point you to the right service.',
+    'I appreciate you sharing this. Message me if you’d like to explore it more closely in a reading and I’ll help with the next step.',
+  ]),
+  kumpania: Object.freeze([
+    'Thank you for sharing that. If you’d like guidance on it, message us and we’ll point you to the right named reader.',
+    'We appreciate you sharing this. Send us a message if you’d like to explore it more closely and we’ll point you to the right reader.',
+  ]),
+  daniel: Object.freeze([
+    'Thank you for sharing that. If you’d like to explore it through my work, send me a message and I’ll point you to the right option.',
+    'I appreciate you sharing this. Message me if you’d like guidance on the best next step for you.',
+  ]),
+});
+
 const CHAYA_BIRTHDAY_LEAD_POST =
   /\btype your birthday\b.{0,200}\bi will show you the date\b.{0,200}\bthe full month comes to your inbox\b/i;
 const CHAYA_BIRTHDAY_LEAD_REPLIES = Object.freeze([
@@ -185,6 +214,21 @@ export function buildSafeTemplateReply({
     ? relationship
     : 'new_follower';
   const replies = CURATED_REPLIES[persona][relationshipKey];
+  return sanitizeReplyText(replies[stableReplyIndex(`${senderId}:${normalized}`, replies.length)]);
+}
+
+/**
+ * A dependable live reply for ordinary comments when generative drafting is
+ * unavailable. It opens a relevant sales conversation without putting a
+ * price in public or attempting sensitive customer-service cases.
+ */
+export function buildSafeFallbackReply({ persona, comment, senderId = '' }) {
+  const normalized = normalizeComment(comment);
+  const replies = FALLBACK_PUBLIC_REPLIES[persona];
+  if (!replies || !normalized || normalized.length > 500) return null;
+  if (/https?:\/\/|www\./i.test(normalized) || UNSAFE_FALLBACK_SIGNAL.test(normalized)) {
+    return null;
+  }
   return sanitizeReplyText(replies[stableReplyIndex(`${senderId}:${normalized}`, replies.length)]);
 }
 

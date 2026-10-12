@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   ACCOUNT_ROUTES,
   buildReplyPrompt,
+  buildSafeFallbackReply,
   buildSafeTemplateReply,
   chayaBirthdayLeadDecision,
   chayaReels33Decision,
@@ -212,6 +213,30 @@ test('brief neutral-positive reactions receive a safe persona reply', () => {
 
   assert.match(reply, /Thank you|I appreciate|glad/i);
   assert.doesNotMatch(reply, /\u2014/);
+});
+
+test('ordinary fallback replies open a sale conversation without public prices', () => {
+  for (const persona of ['chaya', 'ren', 'nadja', 'david', 'kumpania', 'daniel']) {
+    const reply = buildSafeFallbackReply({
+      persona,
+      comment: 'I have been thinking about this all week',
+      senderId: `fallback:${persona}`,
+    });
+    assert.match(reply, /message|next step/i);
+    assert.match(reply, /reading|guidance|work|service|reader|option/i);
+    assert.doesNotMatch(reply, /\$|CA\$|price|\u2014/i);
+  }
+});
+
+test('ordinary fallback replies refuse complaints and high-risk topics', () => {
+  for (const comment of [
+    'I paid and my order never arrived',
+    'I need medical advice about this',
+    'This is a scam',
+    'Look at https://example.com',
+  ]) {
+    assert.equal(buildSafeFallbackReply({ persona: 'chaya', comment }), null, comment);
+  }
 });
 
 const birthdayLeadPost =

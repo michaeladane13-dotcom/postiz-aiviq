@@ -68,8 +68,11 @@ Chaya, Ren, Nadja, David, The Kumpania and Daniel Facebook/Instagram integration
 - `FACEBOOK_APP_SECRET`
 - `META_VERIFY_TOKEN`
 - `COMMENT_AGENT_ADMIN_TOKEN`
-- `META_GRAPH_VERSION` (optional; defaults to `v25.0`)
-- `OPENAI_API_KEY` (optional; without it, moderation runs but drafts are marked blocked)
+- `META_APP_ID` (optional for this deployment; defaults to the connected Meta app)
+- `META_WEBHOOK_URL` (optional; defaults to the live service callback URL)
+- `META_GRAPH_VERSION` (optional; defaults to `v26.0`)
+- `OPENAI_API_KEY` (optional; curated public and inbox fallbacks continue when
+  generation is unavailable)
 - `OPENAI_MODEL` (optional; defaults to `gpt-5-mini`)
 - `REPLY_MODE` (optional; `shadow` by default, or `limited_live` for curated replies)
 - `CHAYA_SALES_PRIVATE_REPLIES_ENABLED` (optional; must be exactly `true` to enable

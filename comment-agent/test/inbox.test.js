@@ -32,6 +32,11 @@ test('produces persona-specific inbox replies and rejects forbidden model output
   assert.match(buildSafeInboxTemplateReply('david', 'reading_inquiry'), /davidthemystic\.ca/);
   assert.match(buildSafeInboxTemplateReply('kumpania', 'reading_inquiry'), /thekumpania\.com/);
   assert.match(buildSafeInboxTemplateReply('daniel', 'reading_inquiry'), /danielpsychicartist\.space/);
+  for (const persona of ['chaya', 'ren', 'nadja', 'david', 'kumpania', 'daniel']) {
+    const reply = buildSafeInboxTemplateReply(persona, 'ordinary');
+    assert.match(reply, /tell (?:me|us) a little more/i);
+    assert.doesNotMatch(reply, /\u2014/);
+  }
   const sanitize = (value) => value.replace(/[\u2013\u2014]/g, ',');
   assert.equal(validateInboxReply('Warm and human.', sanitize), 'Warm and human.');
   assert.equal(validateInboxReply('This was automated.', sanitize), null);

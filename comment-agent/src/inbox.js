@@ -31,36 +31,48 @@ const TEMPLATES = Object.freeze({
     gratitude: 'You’re very welcome, lovely 💜',
     reading_inquiry:
       'Of course, lovely. Tell me what you’d like the reading to focus on and I’ll point you to the right option. You can also see the current readings at https://chayathemedium.org/shop 💜',
+    ordinary:
+      'Thanks for your message, lovely. Tell me a little more about what you’d like help with and I’ll point you to the right next step 💜',
   }),
   ren: Object.freeze({
     greeting: 'Hi, how can I help you today?',
     gratitude: 'You’re very welcome. I’m glad it helped.',
     reading_inquiry:
       'Of course. Tell me what you’d like the reading to focus on and I’ll point you to the right option. You can also see the current readings at https://renlevyreadings.com/readings.',
+    ordinary:
+      'Thanks for your message. Tell me a little more about what you’d like help with and I’ll point you to the right next step.',
   }),
   nadja: Object.freeze({
     greeting: 'Hi lovely, how can I help you today?',
     gratitude: 'You’re very welcome, lovely.',
     reading_inquiry:
       'Of course, lovely. Tell me what you’d like guidance on and I’ll point you to the right option. You can also see the current readings and spell work at https://nadjaromawitch.store/.',
+    ordinary:
+      'Thanks for your message, lovely. Tell me a little more about what you’d like guidance on and I’ll help with the next step.',
   }),
   david: Object.freeze({
     greeting: 'Hello. How can I help you today?',
     gratitude: 'You’re very welcome. I’m glad it helped.',
     reading_inquiry:
       'Of course. Tell me what you’d like guidance on and I’ll point you to the right option. You can also see the current services at https://davidthemystic.ca/.',
+    ordinary:
+      'Thanks for your message. Tell me a little more about what you’d like guidance on and I’ll help with the next step.',
   }),
   kumpania: Object.freeze({
     greeting: 'Hello from The Kumpania. How can we help you today?',
     gratitude: 'You’re very welcome. We’re glad it helped.',
     reading_inquiry:
       'Of course. Tell us what you’d like guidance on and we’ll point you to the right named reader. You can also meet the current readers at https://thekumpania.com/readers.',
+    ordinary:
+      'Thanks for your message. Tell us a little more about what you’d like guidance on and we’ll help with the next step.',
   }),
   daniel: Object.freeze({
     greeting: 'Hello. How can I help you today?',
     gratitude: 'You’re very welcome. I’m glad it helped.',
     reading_inquiry:
       'Of course. Tell me whether you’re looking for a written reading, a psychic drawing or audio work and I’ll point you to the right option. You can see my current work at https://danielpsychicartist.space/checkout.',
+    ordinary:
+      'Thanks for your message. Tell me a little more about what you’re looking for and I’ll help with the next step.',
   }),
 });
 

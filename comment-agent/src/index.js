@@ -20,6 +20,7 @@ import {
   ACCOUNT_ROUTES,
   PERSONAS,
   buildReplyPrompt,
+  buildSafeFallbackReply,
   buildSafeTemplateReply,
   chayaBirthdayLeadDecision,
   chayaReels33Decision,
@@ -50,6 +51,9 @@ const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v26.0';
 const DATABASE_URL = process.env.DATABASE_URL;
 const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
 const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
+const META_APP_ID = process.env.META_APP_ID || '970975352264799';
+const META_WEBHOOK_URL = process.env.META_WEBHOOK_URL ||
+  'https://meta-comment-agent-production.up.railway.app/webhooks/meta';
 const ADMIN_TOKEN = process.env.COMMENT_AGENT_ADMIN_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
@@ -64,6 +68,7 @@ const PRIVATE_REPLY_PER_MINUTE = Number(process.env.PRIVATE_REPLY_PER_MINUTE || 
 const PRIVATE_REPLY_PER_DAY = Number(process.env.PRIVATE_REPLY_PER_DAY || 200);
 const INBOX_REPLY_PER_MINUTE = Number(process.env.INBOX_REPLY_PER_MINUTE || 20);
 const INBOX_REPLY_PER_DAY = Number(process.env.INBOX_REPLY_PER_DAY || 500);
+const INBOX_RECOVERY_POLL_MS = 15 * 60 * 1000;
 const SALES_REPORT_TIME_ZONE = process.env.SALES_REPORT_TIME_ZONE || 'America/Vancouver';
 const BUFFER_API_KEY = process.env.BUFFER_API_KEY || '';
 const bufferApi = new BufferApi(BUFFER_API_KEY);
@@ -122,6 +127,30 @@ const inboxReplyRateLimiter = new PrivateReplyRateLimiter({
   perMinute: INBOX_REPLY_PER_MINUTE,
   perDay: INBOX_REPLY_PER_DAY,
 });
+let appWebhookSummary = {
+  ok: false,
+  status: 'pending',
+  lastCheckedAt: null,
+  objects: [],
+  error: null,
+};
+let generationSummary = {
+  configured: Boolean(OPENAI_API_KEY),
+  available: OPENAI_API_KEY ? null : false,
+  lastCheckedAt: null,
+  lastSuccessfulAt: null,
+  error: OPENAI_API_KEY ? null : 'OPENAI_API_KEY is not configured',
+};
+let inboxRecoveryRunning = false;
+let inboxRecoverySummary = {
+  enabled: META_INBOX_RESPONDER_ENABLED,
+  intervalMinutes: INBOX_RECOVERY_POLL_MS / 60_000,
+  lastCheckedAt: null,
+  recovered: 0,
+  skippedNonText: 0,
+  failedAccounts: 0,
+  error: null,
+};
 
 for (const [name, value] of Object.entries({
   DATABASE_URL,
@@ -427,6 +456,75 @@ async function graphRequest(path, accessToken, options = {}, host = 'graph.faceb
   return body;
 }
 
+async function ensureMetaAppWebhooks() {
+  const checkedAt = new Date().toISOString();
+  if (!META_APP_ID) {
+    appWebhookSummary = {
+      ok: false,
+      status: 'failed',
+      lastCheckedAt: checkedAt,
+      objects: [],
+      error: 'META_APP_ID is not configured',
+    };
+    return;
+  }
+
+  const appAccessToken = `${META_APP_ID}|${FACEBOOK_APP_SECRET}`;
+  const required = [
+    { object: 'page', fields: ['feed', 'messages', 'messaging_optins'] },
+    { object: 'instagram', fields: ['comments', 'messages', 'messaging_optins'] },
+  ];
+  try {
+    for (const item of required) {
+      await graphRequest(`${encodeURIComponent(META_APP_ID)}/subscriptions`, appAccessToken, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          object: item.object,
+          callback_url: META_WEBHOOK_URL,
+          verify_token: META_VERIFY_TOKEN,
+          fields: item.fields.join(','),
+          include_values: 'true',
+        }),
+      });
+    }
+
+    const result = await graphRequest(
+      `${encodeURIComponent(META_APP_ID)}/subscriptions`,
+      appAccessToken
+    );
+    const active = (result?.data || []).map((subscription) => ({
+      object: String(subscription.object || ''),
+      active: subscription.active === true,
+      callbackMatches: subscription.callback_url === META_WEBHOOK_URL,
+      fields: (subscription.fields || []).map((field) => String(field?.name || field)),
+    }));
+    const ok = required.every((item) => {
+      const subscription = active.find((candidate) => candidate.object === item.object);
+      return Boolean(
+        subscription?.active &&
+        subscription.callbackMatches &&
+        item.fields.every((field) => subscription.fields.includes(field))
+      );
+    });
+    appWebhookSummary = {
+      ok,
+      status: ok ? 'registered' : 'incomplete',
+      lastCheckedAt: checkedAt,
+      objects: active,
+      error: ok ? null : 'Meta app webhook registration is incomplete',
+    };
+  } catch (error) {
+    appWebhookSummary = {
+      ok: false,
+      status: 'failed',
+      lastCheckedAt: checkedAt,
+      objects: [],
+      error: String(error.message).slice(0, 500),
+    };
+  }
+}
+
 async function resolveInstagramMessagingEndpoint(account) {
   const me = await graphRequest(
     `me?fields=${encodeURIComponent('id,name,instagram_business_account{id,username}')}`,
@@ -604,14 +702,39 @@ async function generateDraft(input) {
     }),
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(body?.error?.message || `OpenAI returned HTTP ${response.status}`);
+  if (!response.ok) {
+    const message = body?.error?.message || `OpenAI returned HTTP ${response.status}`;
+    generationSummary = {
+      ...generationSummary,
+      available: false,
+      lastCheckedAt: new Date().toISOString(),
+      error: String(message).slice(0, 500),
+    };
+    throw new Error(message);
+  }
   const draft = (body.output || [])
     .flatMap((item) => item?.content || [])
     .filter((part) => part?.type === 'output_text')
     .map((part) => part.text || '')
     .join('')
     .trim();
-  if (!draft) throw new Error('OpenAI returned an empty draft');
+  if (!draft) {
+    generationSummary = {
+      ...generationSummary,
+      available: false,
+      lastCheckedAt: new Date().toISOString(),
+      error: 'OpenAI returned an empty draft',
+    };
+    throw new Error('OpenAI returned an empty draft');
+  }
+  const completedAt = new Date().toISOString();
+  generationSummary = {
+    ...generationSummary,
+    available: true,
+    lastCheckedAt: completedAt,
+    lastSuccessfulAt: completedAt,
+    error: null,
+  };
   return { draft: sanitizeReplyText(draft).slice(0, 1000), model: OPENAI_MODEL, error: null };
 }
 
@@ -1070,7 +1193,16 @@ async function generateInboxReply(input) {
     }),
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(body?.error?.message || `OpenAI returned HTTP ${response.status}`);
+  if (!response.ok) {
+    const message = body?.error?.message || `OpenAI returned HTTP ${response.status}`;
+    generationSummary = {
+      ...generationSummary,
+      available: false,
+      lastCheckedAt: new Date().toISOString(),
+      error: String(message).slice(0, 500),
+    };
+    throw new Error(message);
+  }
   const raw = (body.output || [])
     .flatMap((item) => item?.content || [])
     .filter((part) => part?.type === 'output_text')
@@ -1078,6 +1210,14 @@ async function generateInboxReply(input) {
     .join('')
     .trim();
   const reply = validateInboxReply(raw, sanitizeReplyText);
+  const completedAt = new Date().toISOString();
+  generationSummary = {
+    ...generationSummary,
+    available: Boolean(reply),
+    lastCheckedAt: completedAt,
+    lastSuccessfulAt: reply ? completedAt : generationSummary.lastSuccessfulAt,
+    error: reply ? null : 'Generated reply violated an inbox safety rule',
+  };
   return {
     reply,
     model: OPENAI_MODEL,
@@ -1218,22 +1358,27 @@ async function processInboxReply(event, account, senderProfile) {
       directoryProfile ? handoverKnowledge.contextFor(directoryProfile) : '',
       opsProfile ? clientData.contextFor(opsProfile, event.text) : '',
     ].filter(Boolean).join('\n\n');
-    const generated = await generateInboxReply({
-      displayName: PERSONAS[account.persona].displayName,
-      voice: PERSONAS[account.persona].voice,
-      message: event.text,
-      senderName: verifiedSenderName,
-      recentHistory,
-      brandContext: brandKnowledge.contextFor(account.persona),
-      privateClientContext: privateContext,
-    });
-    reply = generated.reply;
-    model = generated.model;
-    generationError = generated.error;
+    try {
+      const generated = await generateInboxReply({
+        displayName: PERSONAS[account.persona].displayName,
+        voice: PERSONAS[account.persona].voice,
+        message: event.text,
+        senderName: verifiedSenderName,
+        recentHistory,
+        brandContext: brandKnowledge.contextFor(account.persona),
+        privateClientContext: privateContext,
+      });
+      reply = generated.reply;
+      model = generated.model;
+      generationError = generated.error;
+    } catch (error) {
+      generationError = String(error.message).slice(0, 1000);
+    }
   }
-  if (!reply && decision.category === 'reading_inquiry') {
-    reply = buildSafeInboxTemplateReply(account.persona, decision.category);
-    model = reply ? 'curated-inbox-fallback-v1' : model;
+  if (!reply) {
+    reply = buildSafeInboxTemplateReply(account.persona, decision.category) ||
+      buildSafeInboxTemplateReply(account.persona, 'ordinary');
+    model = reply ? 'curated-inbox-fallback-v2' : model;
   }
   if (!reply) {
     await updateInboxReply(event.messageId, 'needs_review_no_safe_reply', {
@@ -1296,6 +1441,86 @@ async function processInboundMessage(event) {
     return;
   }
   await processInboxReply(event, account, senderProfile);
+}
+
+async function syncInboxBacklog() {
+  if (!META_INBOX_RESPONDER_ENABLED || inboxRecoveryRunning) return;
+  inboxRecoveryRunning = true;
+  const checkedAt = new Date().toISOString();
+  let recovered = 0;
+  let skippedNonText = 0;
+  let failedAccounts = 0;
+  const errors = [];
+  try {
+    for (const account of accountsByMetaId.values()) {
+      if (!isApprovedInboxAccount(account)) continue;
+      const endpointId = account.messagingEndpointId ||
+        (account.platform === 'facebook' ? account.metaAccountId : null);
+      if (!endpointId) {
+        failedAccounts += 1;
+        errors.push(`${account.persona}: messaging endpoint unavailable`);
+        continue;
+      }
+      try {
+        const fields = encodeURIComponent(
+          'id,updated_time,unread_count,messages.limit(5){id,message,from,to,created_time}'
+        );
+        const platform = account.platform === 'instagram' ? '&platform=instagram' : '';
+        const result = await graphRequest(
+          `${encodeURIComponent(endpointId)}/conversations?fields=${fields}&limit=25${platform}`,
+          account.accessToken
+        );
+        for (const conversation of result?.data || []) {
+          if (Number(conversation.unread_count || 0) < 1) continue;
+          const messages = [...(conversation.messages?.data || [])].sort(
+            (left, right) => Date.parse(right.created_time) - Date.parse(left.created_time)
+          );
+          const latest = messages[0];
+          if (!latest?.id) continue;
+          const senderId = String(latest.from?.id || '');
+          const brandIds = new Set([String(account.metaAccountId), String(endpointId)]);
+          if (!senderId || brandIds.has(senderId)) continue;
+          const text = String(latest.message || '').trim();
+          if (!text) {
+            skippedNonText += 1;
+            continue;
+          }
+          const timestamp = Date.parse(latest.created_time);
+          if (!Number.isFinite(timestamp) || !isWithinStandardMessagingWindow(timestamp)) continue;
+          await processInboundMessage({
+            kind: 'message',
+            platform: account.platform,
+            metaAccountId: account.metaAccountId,
+            messageId: String(latest.id),
+            text,
+            senderId,
+            recipientId: String(endpointId),
+            timestamp,
+            raw: {
+              source: 'conversation_recovery',
+              conversationId: String(conversation.id || ''),
+              updatedTime: conversation.updated_time || null,
+            },
+          });
+          recovered += 1;
+        }
+      } catch (error) {
+        failedAccounts += 1;
+        errors.push(`${account.persona}: ${String(error.message).slice(0, 200)}`);
+      }
+    }
+    inboxRecoverySummary = {
+      enabled: true,
+      intervalMinutes: INBOX_RECOVERY_POLL_MS / 60_000,
+      lastCheckedAt: checkedAt,
+      recovered,
+      skippedNonText,
+      failedAccounts,
+      error: errors.length ? errors.join('; ').slice(0, 1000) : null,
+    };
+  } finally {
+    inboxRecoveryRunning = false;
+  }
 }
 
 async function processMarketingOptIn(event) {
@@ -1499,29 +1724,85 @@ async function processEvent(event) {
         return;
       }
 
-      const generated = await generateDraft({
+      let generated = { draft: null, model: OPENAI_MODEL, error: null };
+      try {
+        generated = await generateDraft({
+          persona: account.persona,
+          comment: event.text,
+          postText,
+          username: event.username,
+          relationship: relationship.relationship,
+          relationshipNotes: relationship.notes,
+          recentHistory: relationship.recentHistory,
+          brandContext: brandKnowledge.contextFor(account.persona, { publicReply: true }),
+        });
+      } catch (error) {
+        generated.error = String(error.message).slice(0, 1000);
+      }
+
+      const reply = generated.draft || buildSafeFallbackReply({
         persona: account.persona,
         comment: event.text,
-        postText,
-        username: event.username,
-        relationship: relationship.relationship,
-        relationshipNotes: relationship.notes,
-        recentHistory: relationship.recentHistory,
-        brandContext: brandKnowledge.contextFor(account.persona, { publicReply: true }),
+        senderId: event.senderId,
       });
-      await saveDraft({
-        event,
-        account,
-        draft: generated.draft,
-        status: generated.draft ? 'pending' : 'generation_blocked',
-        model: generated.model,
-        error: generated.error,
-      });
-      await updateEvent(
-        event.commentId,
-        generated.draft ? 'drafted' : 'generation_blocked',
-        generated.error
-      );
+      const replyModel = generated.draft ? generated.model : 'curated-public-fallback-v1';
+      if (!reply) {
+        await saveDraft({
+          event,
+          account,
+          draft: null,
+          status: 'needs_review_no_safe_reply',
+          model: generated.model,
+          error: generated.error,
+        });
+        await updateEvent(event.commentId, 'needs_review_no_safe_reply', generated.error);
+        return;
+      }
+
+      if (REPLY_MODE !== 'limited_live') {
+        await saveDraft({
+          event,
+          account,
+          draft: reply,
+          status: generated.draft ? 'pending_generated' : 'pending_fallback',
+          model: replyModel,
+          error: generated.error,
+        });
+        await updateEvent(
+          event.commentId,
+          generated.draft ? 'drafted_generated' : 'drafted_fallback',
+          generated.error
+        );
+        return;
+      }
+
+      try {
+        await publishReply(event, account, reply);
+        await saveDraft({
+          event,
+          account,
+          draft: reply,
+          status: generated.draft ? 'published_generated' : 'published_fallback',
+          model: replyModel,
+          error: generated.error,
+        });
+        await updateEvent(
+          event.commentId,
+          generated.draft ? 'replied_generated' : 'replied_fallback',
+          generated.error
+        );
+      } catch (error) {
+        const message = String(error.message).slice(0, 1000);
+        await saveDraft({
+          event,
+          account,
+          draft: reply,
+          status: 'publish_failed',
+          model: replyModel,
+          error: message,
+        });
+        await updateEvent(event.commentId, 'reply_failed', message);
+      }
     } catch (error) {
       await updateEvent(event.commentId, 'generation_failed', String(error.message).slice(0, 1000));
     }
@@ -1612,12 +1893,13 @@ const server = http.createServer(async (request, response) => {
       clientDataStatus.loaded &&
       !clientDataStatus.error &&
       (!messagingFeatureEnabled || subscriptionSummary.failed === 0) &&
-      (!messagingFeatureEnabled || messagingEndpointErrors.length === 0);
+      (!messagingFeatureEnabled || messagingEndpointErrors.length === 0) &&
+      (!messagingFeatureEnabled || appWebhookSummary.status === 'pending' || appWebhookSummary.ok);
     sendJson(response, ok ? 200 : 503, {
       ok,
       accountsLoaded: accountsByMetaId.size,
       expectedAccounts,
-      personaDrafting: Boolean(OPENAI_API_KEY),
+      personaDrafting: Boolean(OPENAI_API_KEY) && generationSummary.available !== false,
       mode: REPLY_MODE,
       limitedPersonaReplies: REPLY_MODE === 'limited_live',
       commentPolicy: { aiReferences: 'delete_no_reply' },
@@ -1653,10 +1935,15 @@ const server = http.createServer(async (request, response) => {
         rateLimitPerMinute: INBOX_REPLY_PER_MINUTE,
         rateLimitPerDay: INBOX_REPLY_PER_DAY,
         safeTemplatesAvailableWithoutModel: true,
-        generativeRepliesAvailable: Boolean(OPENAI_API_KEY),
+        generativeRepliesAvailable:
+          Boolean(OPENAI_API_KEY) && generationSummary.available !== false,
+        deterministicFallbackEnabled: true,
         standardWindowHours: 24,
         messagingEndpointErrors,
       },
+      generativeProvider: generationSummary,
+      appWebhooks: appWebhookSummary,
+      inboxRecovery: inboxRecoverySummary,
       clientDirectory: clientDirectory.status(),
       clientData: clientDataStatus,
       handoverKnowledge: handoverKnowledge.status(),
@@ -1889,6 +2176,12 @@ await clientData.sync().catch((error) => {
 });
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`comment_agent_ready port=${PORT} accounts=${accountsByMetaId.size} drafting=${Boolean(OPENAI_API_KEY)}`);
+  ensureMetaAppWebhooks().catch((error) => {
+    console.error('meta_app_webhook_sync_failed', error.message);
+  });
+  syncInboxBacklog().catch((error) => {
+    console.error('inbox_recovery_failed', error.message);
+  });
 });
 
 setInterval(async () => {
@@ -1918,6 +2211,16 @@ setInterval(() => {
 setInterval(() => {
   clientData.sync().catch((error) => console.error('client_data_sync_failed', error.message));
 }, CLIENT_DATA_SYNC_MS).unref();
+
+setInterval(() => {
+  ensureMetaAppWebhooks().catch((error) => {
+    console.error('meta_app_webhook_sync_failed', error.message);
+  });
+}, CLIENT_HANDOVER_SYNC_MS).unref();
+
+setInterval(() => {
+  syncInboxBacklog().catch((error) => console.error('inbox_recovery_failed', error.message));
+}, INBOX_RECOVERY_POLL_MS).unref();
 
 
 export { extractEvents };
