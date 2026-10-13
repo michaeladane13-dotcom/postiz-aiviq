@@ -38,6 +38,26 @@ test('Groq inbox prompts cannot receive private client records or notes', () => 
   assert.equal(safe.recentHistory.length, 1);
 });
 
+test('Anthropic prompts receive the same privacy scrubbing as Groq', () => {
+  const safePublic = publicPromptInputForProvider('anthropic', {
+    comment: 'Can I book a reading?',
+    username: 'private_handle',
+    relationship: 'client',
+    relationshipNotes: 'PRIVATE CLIENT NOTE',
+  });
+  const safeInbox = inboxPromptInputForProvider('anthropic', {
+    message: 'What reading should I book?',
+    senderName: 'Private client name',
+    privateClientContext: 'PRIVATE CLIENT RECORD',
+  });
+
+  assert.equal(safePublic.username, '');
+  assert.equal(safePublic.relationship, 'new_follower');
+  assert.equal(safePublic.relationshipNotes, '');
+  assert.equal(safeInbox.senderName, '');
+  assert.equal(safeInbox.privateClientContext, '');
+});
+
 test('other providers retain their existing input contract', () => {
   const input = { privateClientContext: 'legacy context' };
   assert.equal(inboxPromptInputForProvider('openai', input), input);

@@ -20,6 +20,11 @@ import {
   inboxPromptInputForProvider,
   publicPromptInputForProvider,
 } from './generation-privacy.js';
+import {
+  buildGenerationRequest,
+  extractGeneratedText,
+  selectGenerationProvider,
+} from './generation-provider.js';
 import { GitHubHandoverKnowledge } from './handover-knowledge.js';
 import {
   buildInboxReplyPrompt,
@@ -68,16 +73,11 @@ const META_APP_ID = process.env.META_APP_ID || '970975352264799';
 const META_WEBHOOK_URL = process.env.META_WEBHOOK_URL ||
   'https://meta-comment-agent-production.up.railway.app/webhooks/meta';
 const ADMIN_TOKEN = process.env.COMMENT_AGENT_ADMIN_TOKEN;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
-const GENERATION_PROVIDER = GROQ_API_KEY ? 'groq' : OPENAI_API_KEY ? 'openai' : null;
-const GENERATION_API_KEY = GROQ_API_KEY || OPENAI_API_KEY;
-const GENERATION_MODEL = GROQ_API_KEY ? GROQ_MODEL : OPENAI_MODEL;
-const GENERATION_ENDPOINT = GROQ_API_KEY
-  ? 'https://api.groq.com/openai/v1/responses'
-  : 'https://api.openai.com/v1/responses';
+const GENERATION_CONFIG = selectGenerationProvider(process.env);
+const GENERATION_PROVIDER = GENERATION_CONFIG.provider;
+const GENERATION_API_KEY = GENERATION_CONFIG.apiKey;
+const GENERATION_MODEL = GENERATION_CONFIG.model;
+const GENERATION_ENDPOINT = GENERATION_CONFIG.endpoint;
 const REPLY_MODE = process.env.REPLY_MODE || 'shadow';
 const CHAYA_SALES_PRIVATE_REPLIES_ENABLED =
   process.env.CHAYA_SALES_PRIVATE_REPLIES_ENABLED === 'true';
@@ -723,18 +723,15 @@ async function generateDraft(input) {
     return { draft: null, model: null, error: 'No generative provider is configured' };
   }
   const providerInput = publicPromptInputForProvider(GENERATION_PROVIDER, input);
+  const request = buildGenerationRequest(
+    GENERATION_CONFIG,
+    buildReplyPrompt(providerInput),
+    120
+  );
   const response = await fetch(GENERATION_ENDPOINT, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${GENERATION_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: GENERATION_MODEL,
-      input: buildReplyPrompt(providerInput),
-      max_output_tokens: 120,
-      store: false,
-    }),
+    headers: request.headers,
+    body: JSON.stringify(request.body),
   });
   const body = await response.json();
   if (!response.ok) {
@@ -747,12 +744,7 @@ async function generateDraft(input) {
     };
     throw new Error(message);
   }
-  const draft = (body.output || [])
-    .flatMap((item) => item?.content || [])
-    .filter((part) => part?.type === 'output_text')
-    .map((part) => part.text || '')
-    .join('')
-    .trim();
+  const draft = extractGeneratedText(GENERATION_PROVIDER, body);
   if (!draft) {
     generationSummary = {
       ...generationSummary,
@@ -1293,18 +1285,15 @@ async function generateInboxReply(input) {
     return { reply: null, model: null, error: 'No generative provider is configured' };
   }
   const providerInput = inboxPromptInputForProvider(GENERATION_PROVIDER, input);
+  const request = buildGenerationRequest(
+    GENERATION_CONFIG,
+    buildInboxReplyPrompt(providerInput),
+    180
+  );
   const response = await fetch(GENERATION_ENDPOINT, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${GENERATION_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: GENERATION_MODEL,
-      input: buildInboxReplyPrompt(providerInput),
-      max_output_tokens: 180,
-      store: false,
-    }),
+    headers: request.headers,
+    body: JSON.stringify(request.body),
   });
   const body = await response.json();
   if (!response.ok) {
@@ -1317,12 +1306,7 @@ async function generateInboxReply(input) {
     };
     throw new Error(message);
   }
-  const raw = (body.output || [])
-    .flatMap((item) => item?.content || [])
-    .filter((part) => part?.type === 'output_text')
-    .map((part) => part.text || '')
-    .join('')
-    .trim();
+  const raw = extractGeneratedText(GENERATION_PROVIDER, body);
   const reply = validateInboxReply(raw, sanitizeReplyText);
   const completedAt = new Date().toISOString();
   generationSummary = {

@@ -1,5 +1,5 @@
 export function publicPromptInputForProvider(provider, input) {
-  if (provider !== 'groq') return input;
+  if (!['groq', 'anthropic'].includes(provider)) return input;
   return {
     ...input,
     username: '',
@@ -9,7 +9,7 @@ export function publicPromptInputForProvider(provider, input) {
 }
 
 export function inboxPromptInputForProvider(provider, input) {
-  if (provider !== 'groq') return input;
+  if (!['groq', 'anthropic'].includes(provider)) return input;
   return {
     ...input,
     senderName: '',
