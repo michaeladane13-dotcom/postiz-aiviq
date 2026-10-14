@@ -25,6 +25,17 @@ test('templates greetings, thanks and reading inquiries while escalating risky m
   assert.equal(classifyInboxMessage('Are you a real person or a bot?').action, 'review');
   assert.equal(classifyInboxMessage('I need legal advice').action, 'review');
   assert.equal(classifyInboxMessage('My order never arrived').action, 'review');
+  for (const message of [
+    'where are you from',
+    'Are you single?',
+    'You are so sexy',
+    'Can I have your WhatsApp number?',
+    'Send me a picture',
+  ]) {
+    assert.deepEqual(classifyInboxMessage(message), {
+      action: 'review', category: 'personal_or_flirtatious',
+    });
+  }
 });
 
 test('produces persona-specific inbox replies and rejects forbidden model output', () => {
@@ -32,6 +43,11 @@ test('produces persona-specific inbox replies and rejects forbidden model output
   assert.match(buildSafeInboxTemplateReply('david', 'reading_inquiry'), /davidthemystic\.ca/);
   assert.match(buildSafeInboxTemplateReply('kumpania', 'reading_inquiry'), /thekumpania\.com/);
   assert.match(buildSafeInboxTemplateReply('daniel', 'reading_inquiry'), /danielpsychicartist\.space/);
+  assert.equal(
+    buildSafeInboxTemplateReply('chaya', 'greeting'),
+    'Hi, how can I help with a reading or booking today? 💜'
+  );
+  assert.doesNotMatch(buildSafeInboxTemplateReply('chaya', 'greeting'), /lovely/i);
   for (const persona of ['chaya', 'ren', 'nadja', 'david', 'kumpania', 'daniel']) {
     const reply = buildSafeInboxTemplateReply(persona, 'ordinary');
     assert.match(reply, /tell (?:me|us) a little more/i);
@@ -58,6 +74,7 @@ test('prompt isolates exact private context and forbids introducing it', () => {
   assert.match(prompt, /Never borrow a fact/);
   assert.match(prompt, /Never use an em dash/);
   assert.match(prompt, /recommend the smallest suitable current offer/);
+  assert.match(prompt, /Never encourage personal, romantic, flirtatious or sexual conversation/);
   assert.match(prompt, /Never recommend a first-time or new-client offer to a returning client/);
   assert.match(prompt, /Do not repeat the card link/);
 });

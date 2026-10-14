@@ -18,6 +18,8 @@ const HIGH_RISK_ADVICE =
   /\b(?:doctor|medical|diagnos|medication|pregnan|lawyer|legal|court|police|invest|mortgage|bankruptcy|tax\s+advice|financial\s+advice)\b/iu;
 const ORDER_OR_DISPUTE =
   /\b(?:refund|chargeback|charged|payment|paid|invoice|order|delivery|delivered|never\s+received|didn'?t\s+receive|missing\s+reading|scam|fraud|complaint)\b/iu;
+const PERSONAL_OR_FLIRTATIOUS =
+  /\b(?:where\s+(?:are|do)\s+you\s+(?:from|live)|where\s+are\s+you\s+based|how\s+old\s+are\s+you|what(?:'s|\s+is)\s+your\s+(?:age|number|phone\s+number)|are\s+you\s+(?:single|married|available)|do\s+you\s+have\s+(?:a\s+)?(?:boyfriend|girlfriend|husband|wife|partner)|can\s+i\s+(?:date|meet|call|kiss)\s+you|send\s+(?:me\s+)?(?:a\s+)?(?:photo|picture|pic)|you(?:'re|\s+are)\s+(?:so\s+)?(?:hot|sexy|beautiful|gorgeous|cute)|i\s+(?:love|fancy|want)\s+you|kiss\s+me|nudes?|naked|hook\s+up|your\s+whatsapp|whatsapp\s+number)\b/iu;
 const GRATITUDE = /^(?:thank\s+you|thanks|ty|appreciate\s+(?:it|you)|that\s+helped)[\s.!?❤💜💕💖✨🙏🥰🫶]*$/iu;
 const GREETING = /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|hiya)[\s.!?❤💜💕💖✨🙏🥰🫶]*$/iu;
 const READING_INQUIRY =
@@ -27,7 +29,7 @@ const FORBIDDEN_OUTBOUND =
 
 const TEMPLATES = Object.freeze({
   chaya: Object.freeze({
-    greeting: 'Hi lovely, how can I help you today? 💜',
+    greeting: 'Hi, how can I help with a reading or booking today? 💜',
     gratitude: 'You’re very welcome, lovely 💜',
     reading_inquiry:
       'Of course, lovely. Tell me what you’d like the reading to focus on and I’ll point you to the right option. You can also see the current readings at https://chayathemedium.org/shop 💜',
@@ -43,7 +45,7 @@ const TEMPLATES = Object.freeze({
       'Thanks for your message. Tell me a little more about what you’d like help with and I’ll point you to the right next step.',
   }),
   nadja: Object.freeze({
-    greeting: 'Hi lovely, how can I help you today?',
+    greeting: 'Hi, how can I help with a reading, spell or booking today?',
     gratitude: 'You’re very welcome, lovely.',
     reading_inquiry:
       'Of course, lovely. Tell me what you’d like guidance on and I’ll point you to the right option. You can also see the current readings and spell work at https://nadjaromawitch.store/.',
@@ -95,6 +97,9 @@ export function classifyInboxMessage(text) {
   if (ORDER_OR_DISPUTE.test(normalized)) {
     return { action: 'review', category: 'order_or_dispute' };
   }
+  if (PERSONAL_OR_FLIRTATIOUS.test(normalized)) {
+    return { action: 'review', category: 'personal_or_flirtatious' };
+  }
   if (GRATITUDE.test(normalized)) return { action: 'template', category: 'gratitude' };
   if (GREETING.test(normalized)) return { action: 'template', category: 'greeting' };
   if (READING_INQUIRY.test(normalized)) return { action: 'template', category: 'reading_inquiry' };
@@ -130,6 +135,7 @@ export function buildInboxReplyPrompt({
     'Never use the word fluff. Never use an em dash.',
     'Do not give medical, legal or financial advice, and do not claim certainty about the future.',
     'Do not invent an order status, delivery, booking, price, discount, service, result or prior conversation.',
+    'Keep the conversation strictly about the brand’s services. Never encourage personal, romantic, flirtatious or sexual conversation, and never answer questions about where the reader lives, where they are from, their relationship status, age, phone number or private contact details.',
     'Use only the active brand reference below for business facts. Never borrow a fact, link, service or offer from another brand.',
     'When the sender asks about a reading, booking or a problem that a current service clearly fits, recommend the smallest suitable current offer, include its official link and give one clear next step. Be sales-minded but never pressure them.',
     'Quote a price only when that exact price appears in the latest active brand reference. Otherwise link to the official page without guessing.',
