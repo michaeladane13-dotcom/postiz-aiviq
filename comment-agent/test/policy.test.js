@@ -66,6 +66,20 @@ test('ordinary comments become shadow-mode draft candidates', () => {
   });
 });
 
+test('personal appearance and social-pursuit comments are ignored instead of sold to', () => {
+  for (const comment of [
+    "Looking comfy I'm from England it's freezing",
+    'tell me what would you like to do',
+    'You look gorgeous',
+    'Can we chat?',
+  ]) {
+    assert.deepEqual(classifyComment(comment), {
+      action: 'ignore', reason: 'personal_small_talk',
+    }, comment);
+  }
+  assert.equal(classifyComment('I am from England and want to book a reading').action, 'draft_reply');
+});
+
 test('uses app-level Instagram webhooks and account-level Facebook subscriptions', () => {
   assert.deepEqual(metaSubscriptionStrategy('instagram', '17841400000000000'), {
     mode: 'app_level',

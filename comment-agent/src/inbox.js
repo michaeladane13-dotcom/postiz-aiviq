@@ -19,7 +19,7 @@ const HIGH_RISK_ADVICE =
 const ORDER_OR_DISPUTE =
   /\b(?:refund|chargeback|charged|payment|paid|invoice|order|delivery|delivered|never\s+received|didn'?t\s+receive|missing\s+reading|scam|fraud|complaint)\b/iu;
 const PERSONAL_OR_FLIRTATIOUS =
-  /\b(?:where\s+(?:are|do)\s+you\s+(?:from|live)|where\s+are\s+you\s+based|how\s+old\s+are\s+you|what(?:'s|\s+is)\s+your\s+(?:age|number|phone\s+number)|are\s+you\s+(?:single|married|available)|do\s+you\s+have\s+(?:a\s+)?(?:boyfriend|girlfriend|husband|wife|partner)|can\s+i\s+(?:date|meet|call|kiss)\s+you|send\s+(?:me\s+)?(?:a\s+)?(?:photo|picture|pic)|you(?:'re|\s+are)\s+(?:so\s+)?(?:hot|sexy|beautiful|gorgeous|cute)|i\s+(?:love|fancy|want)\s+you|kiss\s+me|nudes?|naked|hook\s+up|your\s+whatsapp|whatsapp\s+number)\b/iu;
+  /\b(?:where\s+(?:are|do)\s+you\s+(?:from|live)|where\s+are\s+you\s+based|how\s+old\s+are\s+you|what(?:'s|\s+is)\s+your\s+(?:age|number|phone\s+number)|are\s+you\s+(?:single|married|available)|do\s+you\s+have\s+(?:a\s+)?(?:boyfriend|girlfriend|husband|wife|partner)|can\s+i\s+(?:date|meet|call|kiss)\s+you|send\s+(?:me\s+)?(?:a\s+)?(?:photo|picture|pic)|you(?:'re|\s+are)\s+(?:so\s+)?(?:hot|sexy|beautiful|gorgeous|cute)|(?:looking|you\s+look)\s+(?:comfy|comfortable|cosy|cozy)|(?:i(?:'m|\s+am)|im)\s+from\s+[\p{L}][\p{L}\s.'-]{1,60}(?:\b|$)|(?:tell\s+me\s+)?what\s+would\s+you\s+like\s+to\s+do|can\s+we\s+chat|message\s+me|dm\s+me|add\s+me|friend\s+me|i\s+(?:love|fancy|want)\s+you|kiss\s+me|nudes?|naked|hook\s+up|your\s+whatsapp|whatsapp\s+number)\b/iu;
 const GRATITUDE = /^(?:thank\s+you|thanks|ty|appreciate\s+(?:it|you)|that\s+helped)[\s.!?❤💜💕💖✨🙏🥰🫶]*$/iu;
 const GREETING = /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|hiya)[\s.!?❤💜💕💖✨🙏🥰🫶]*$/iu;
 const READING_INQUIRY =

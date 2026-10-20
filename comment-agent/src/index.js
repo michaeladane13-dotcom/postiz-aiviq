@@ -1760,6 +1760,11 @@ async function processEvent(event) {
   const decision = classifyComment(event.text);
   if (!(await saveEvent(event, account, decision))) return;
 
+  if (decision.action === 'ignore') {
+    await updateEvent(event.commentId, `ignored_${decision.reason}`);
+    return;
+  }
+
   if (decision.action === 'delete') {
     const result = await deleteOrHide(event, account);
     await updateEvent(event.commentId, result.status, result.error);

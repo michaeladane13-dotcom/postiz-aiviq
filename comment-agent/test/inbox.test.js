@@ -27,6 +27,9 @@ test('templates greetings, thanks and reading inquiries while escalating risky m
   assert.equal(classifyInboxMessage('My order never arrived').action, 'review');
   for (const message of [
     'where are you from',
+    "Looking comfy, I'm from England and it's freezing",
+    'tell me what would you like to do',
+    'Can we chat?',
     'Are you single?',
     'You are so sexy',
     'Can I have your WhatsApp number?',

@@ -1,5 +1,9 @@
 const AI_REFERENCE =
   /(?:\bartificial[\s._-]+intelligence\b|\bopen[\s._-]*ai\b|\bchat[\s._-]*gpt\b|\bgpt(?:[\s._-]*\d+(?:\.\d+)?)?\b|\bmidjourney\b|\bdall[\s._-]*e\b|\bstable[\s._-]+diffusion\b|\bdeepfake\b|(?:^|[^\p{L}\p{N}_])a[\s.\-_/]*i(?=$|[^\p{L}\p{N}_])|🤖)/iu;
+const SERVICE_INTENT =
+  /\b(?:book|booking|guidance|medium|order|psychic|read|reading|session|tarot)\b/iu;
+const PERSONAL_SMALL_TALK =
+  /(?:\b(?:looking|you\s+look)\s+(?:comfy|comfortable|cosy|cozy|cute|beautiful|gorgeous|hot|sexy)\b|\b(?:i(?:'m|\s+am)|im)\s+from\s+[\p{L}][\p{L}\s.'-]{1,60}(?:\b|$)|\bwhere\s+(?:are|do)\s+you\s+(?:from|live)\b|\b(?:tell\s+me\s+)?what\s+would\s+you\s+like\s+to\s+do\b|\b(?:can\s+we\s+chat|message\s+me|dm\s+me|add\s+me|friend\s+me)\b)/iu;
 
 export function normalizeComment(text) {
   return String(text || '')
@@ -29,6 +33,9 @@ export function classifyComment(text) {
 
   if (!normalized) return { action: 'ignore', reason: 'empty' };
   if (AI_REFERENCE.test(normalized)) return { action: 'delete', reason: 'ai_reference' };
+  if (PERSONAL_SMALL_TALK.test(normalized) && !SERVICE_INTENT.test(normalized)) {
+    return { action: 'ignore', reason: 'personal_small_talk' };
+  }
 
   return { action: 'draft_reply', reason: 'ordinary_comment' };
 }
