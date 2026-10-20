@@ -78,3 +78,14 @@ test('prompt isolates exact private context and forbids introducing it', () => {
   assert.match(prompt, /Never recommend a first-time or new-client offer to a returning client/);
   assert.match(prompt, /Do not repeat the card link/);
 });
+
+test('no-sales inbox replies receive a hard owner rule', () => {
+  const prompt = buildInboxReplyPrompt({
+    displayName: 'Ren',
+    voice: 'Warm and direct.',
+    message: 'I can never keep a routine',
+    salesBlocked: true,
+  });
+  assert.match(prompt, /must receive no sales pitch, offer, promotion/);
+  assert.doesNotMatch(prompt, /recommend the smallest suitable current offer/);
+});

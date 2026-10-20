@@ -164,6 +164,15 @@ test('verified regulars get familiar language without invented memories', () => 
   assert.match(prompt, /Long-time client/);
 });
 
+test('no-sales public replies receive a hard owner rule', () => {
+  const prompt = buildReplyPrompt({
+    persona: 'ren',
+    comment: 'I can never keep a routine',
+    salesBlocked: true,
+  });
+  assert.match(prompt, /must receive no sales pitch, offer, promotion/);
+});
+
 test('curated replies stay persona-specific for unmistakably positive comments', () => {
   const replies = ['chaya', 'ren', 'david', 'kumpania', 'daniel'].map((persona) =>
     buildSafeTemplateReply({

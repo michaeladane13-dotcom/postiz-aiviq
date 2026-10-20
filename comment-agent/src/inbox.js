@@ -125,6 +125,7 @@ export function buildInboxReplyPrompt({
   brandContext = '',
   privateClientContext = '',
   conversationRule = '',
+  salesBlocked = false,
 }) {
   return [
     `Draft one private Meta inbox reply in ${displayName}'s voice.`,
@@ -137,7 +138,9 @@ export function buildInboxReplyPrompt({
     'Do not invent an order status, delivery, booking, price, discount, service, result or prior conversation.',
     'Keep the conversation strictly about the brand’s services. Never encourage personal, romantic, flirtatious or sexual conversation, and never answer questions about where the reader lives, where they are from, their relationship status, age, phone number or private contact details.',
     'Use only the active brand reference below for business facts. Never borrow a fact, link, service or offer from another brand.',
-    'When the sender asks about a reading, booking or a problem that a current service clearly fits, recommend the smallest suitable current offer, include its official link and give one clear next step. Be sales-minded but never pressure them.',
+    salesBlocked
+      ? 'OWNER RULE: This exact account must receive no sales pitch, offer, promotion, booking direction, call to action or link. Reply warmly only to what they actually wrote.'
+      : 'When the sender asks about a reading, booking or a problem that a current service clearly fits, recommend the smallest suitable current offer, include its official link and give one clear next step. Be sales-minded but never pressure them.',
     'Quote a price only when that exact price appears in the latest active brand reference. Otherwise link to the official page without guessing.',
     'Never recommend a first-time or new-client offer to a returning client. Never cold-pitch a known client. If a known client explicitly asks for a reading, a relevant standard or returning-client option may be recommended.',
     'If private context says no sales, no offers, an active package, human only or do not engage, follow that instruction. Never sell work that may already be covered by a package.',

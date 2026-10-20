@@ -14,6 +14,10 @@ import {
 } from './chaya-card-handoff.js';
 import { GitHubClientData } from './client-data.js';
 import { GitHubClientDirectory } from './client-directory.js';
+import {
+  isNoSalesSocialHandle,
+  noSalesOverrideCount,
+} from './contact-overrides.js';
 import { DailyReelPublisher } from './daily-reels.js';
 import { verifyDailyReelOidc } from './github-oidc.js';
 import {
@@ -38,6 +42,7 @@ import {
   ACCOUNT_ROUTES,
   PERSONAS,
   buildReplyPrompt,
+  buildNoSalesFallbackReply,
   buildSafeFallbackReply,
   buildSafeTemplateReply,
   chayaBirthdayLeadDecision,
@@ -46,6 +51,7 @@ import {
   metaSubscriptionStrategy,
   routeIntegration,
   sanitizeReplyText,
+  validateNoSalesReply,
 } from './policy.js';
 import {
   CHAYA_FACEBOOK_PAGE_ID,
@@ -999,6 +1005,7 @@ function strongestEngagement(...values) {
 }
 
 async function loadRelationship(event, account) {
+  const ownerNoSales = isNoSalesSocialHandle(event.username);
   const directoryProfile = clientDirectory.match(event.username);
   const opsProfile = clientData.matchSocial({
     username: event.username,
@@ -1006,11 +1013,12 @@ async function loadRelationship(event, account) {
   });
   if (!event.senderId) {
     return {
-      relationship: directoryProfile?.relationship || opsProfile?.relationship || 'new_follower',
+      relationship: directoryProfile?.relationship || opsProfile?.relationship ||
+        (ownerNoSales ? 'regular' : 'new_follower'),
       engagement: strongestEngagement(directoryProfile?.engagement, opsProfile?.engagement),
       notes: '',
       recentHistory: [],
-      salesBlocked: Boolean(opsProfile?.noSales || opsProfile?.packageStatus),
+      salesBlocked: Boolean(ownerNoSales || opsProfile?.noSales || opsProfile?.packageStatus),
     };
   }
 
@@ -1055,10 +1063,12 @@ async function loadRelationship(event, account) {
           ? opsProfile.relationship
         : positiveHistoryCount >= 3
           ? 'regular'
-          : 'new_follower',
+          : ownerNoSales
+            ? 'regular'
+            : 'new_follower',
     engagement: strongestEngagement(directoryProfile?.engagement, opsProfile?.engagement),
     notes: profile?.confirmed ? profile.notes || '' : '',
-    salesBlocked: Boolean(opsProfile?.noSales || opsProfile?.packageStatus),
+    salesBlocked: Boolean(ownerNoSales || opsProfile?.noSales || opsProfile?.packageStatus),
     recentHistory: historyResult.rows.reverse().map((row) => ({
       comment: row.commentText,
       outcome: row.status,
@@ -1307,7 +1317,10 @@ async function generateInboxReply(input) {
     throw new Error(message);
   }
   const raw = extractGeneratedText(GENERATION_PROVIDER, body);
-  const reply = validateInboxReply(raw, sanitizeReplyText);
+  const validatedReply = validateInboxReply(raw, sanitizeReplyText);
+  const reply = input.salesBlocked
+    ? validateNoSalesReply(validatedReply)
+    : validatedReply;
   const completedAt = new Date().toISOString();
   generationSummary = {
     ...generationSummary,
@@ -1412,6 +1425,11 @@ async function processInboxReply(event, account, senderProfile) {
     username: senderProfile.username,
     senderId: event.senderId,
   });
+  const salesBlocked = Boolean(
+    isNoSalesSocialHandle(senderProfile.username) ||
+    opsProfile?.noSales ||
+    opsProfile?.packageStatus
+  );
   const cardThread = await loadChayaCardThreadContext(event, account);
   const decision = classifyInboxMessage(event.text);
   const replyCategory = cardThread.isCardThread
@@ -1445,7 +1463,7 @@ async function processInboxReply(event, account, senderProfile) {
   }
 
   const linkRequested = cardThread.isCardThread && asksWhereChayaCardLink(event.text);
-  let reply = cardThread.isCardThread &&
+  let reply = !salesBlocked && cardThread.isCardThread &&
     (linkRequested || decision.category === 'reading_inquiry')
     ? buildChayaCardReadingFollowUp(event.text)
     : (
@@ -1480,6 +1498,7 @@ async function processInboxReply(event, account, senderProfile) {
         brandContext: brandKnowledge.contextFor(account.persona),
         privateClientContext: privateContext,
         conversationRule: chayaCardThreadPromptRule(cardThread.isCardThread),
+        salesBlocked,
       });
       reply = cardThread.isCardThread
         ? validateChayaCardFollowUpReply(generated.reply, { linkRequested })
@@ -1491,8 +1510,10 @@ async function processInboxReply(event, account, senderProfile) {
     }
   }
   if (!reply) {
-    reply = buildSafeInboxTemplateReply(account.persona, decision.category) ||
-      buildSafeInboxTemplateReply(account.persona, 'ordinary');
+    reply = salesBlocked
+      ? buildNoSalesFallbackReply(account.persona)
+      : buildSafeInboxTemplateReply(account.persona, decision.category) ||
+        buildSafeInboxTemplateReply(account.persona, 'ordinary');
     model = reply ? 'curated-inbox-fallback-v2' : model;
   }
   if (!reply) {
@@ -1544,7 +1565,17 @@ async function processInboundMessage(event) {
   if (!(await saveInboundMessage(event, account))) return;
 
   const senderProfile = await fetchMetaSenderProfile(event, account);
+  const opsProfile = clientData.matchSocial({
+    username: senderProfile.username,
+    senderId: event.senderId,
+  });
+  const salesBlocked = Boolean(
+    isNoSalesSocialHandle(senderProfile.username) ||
+    opsProfile?.noSales ||
+    opsProfile?.packageStatus
+  );
   if (
+    !salesBlocked &&
     SALES_PRIVATE_REPLIES_ENABLED &&
     isSalesAccount(account) &&
     await processSalesYesOptIn(event, account, senderProfile)
@@ -1647,6 +1678,16 @@ async function syncInboxBacklog() {
 async function processMarketingOptIn(event) {
   const account = accountsByMetaId.get(event.metaAccountId);
   if (!account || !isSalesAccount(account) || !event.marketingToken) return;
+  const senderProfile = await fetchMetaSenderProfile(event, account);
+  const opsProfile = clientData.matchSocial({
+    username: senderProfile.username,
+    senderId: event.senderId,
+  });
+  if (
+    isNoSalesSocialHandle(senderProfile.username) ||
+    opsProfile?.noSales ||
+    opsProfile?.packageStatus
+  ) return;
   const eventTime = new Date(Number(event.timestamp));
   await pool.query(
     `INSERT INTO comment_agent."MessagingOptIn"
@@ -1748,6 +1789,7 @@ async function processEvent(event) {
       if (
         SALES_PRIVATE_REPLIES_ENABLED &&
         isSalesAccount(account) &&
+        !relationship.salesBlocked &&
         isSalesEligibleRelationship(relationship.relationship) &&
         isSalesTrigger(event.text)
       ) {
@@ -1767,7 +1809,7 @@ async function processEvent(event) {
         await processSalesComment(event, account, { returningClient: true });
         return;
       }
-      const promotion = chayaReels33Decision({
+      const promotion = relationship.salesBlocked ? null : chayaReels33Decision({
         persona: account.persona,
         postText,
         comment: event.text,
@@ -1864,17 +1906,29 @@ async function processEvent(event) {
           relationshipNotes: relationship.notes,
           recentHistory: relationship.recentHistory,
           brandContext: brandKnowledge.contextFor(account.persona, { publicReply: true }),
+          salesBlocked: relationship.salesBlocked,
         });
       } catch (error) {
         generated.error = String(error.message).slice(0, 1000);
       }
 
-      const reply = generated.draft || buildSafeFallbackReply({
-        persona: account.persona,
-        comment: event.text,
-        senderId: event.senderId,
-      });
-      const replyModel = generated.draft ? generated.model : 'curated-public-fallback-v1';
+      const generatedDraft = relationship.salesBlocked
+        ? validateNoSalesReply(generated.draft)
+        : generated.draft;
+      const reply = generatedDraft || (
+        relationship.salesBlocked
+          ? buildNoSalesFallbackReply(account.persona)
+          : buildSafeFallbackReply({
+            persona: account.persona,
+            comment: event.text,
+            senderId: event.senderId,
+          })
+      );
+      const replyModel = generatedDraft
+        ? generated.model
+        : relationship.salesBlocked
+          ? 'curated-no-sales-fallback-v1'
+          : 'curated-public-fallback-v1';
       if (!reply) {
         await saveDraft({
           event,
@@ -2054,6 +2108,9 @@ const server = http.createServer(async (request, response) => {
         rateLimitPerDay: PRIVATE_REPLY_PER_DAY,
         metaMarketingTokenRequiredOutside24Hours: true,
         outside24HourSendsEnabled: false,
+      },
+      noSalesOverrides: {
+        active: noSalesOverrideCount(),
       },
       inboxResponder: {
         enabled: META_INBOX_RESPONDER_ENABLED,

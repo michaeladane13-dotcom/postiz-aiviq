@@ -14,6 +14,10 @@ import {
   isWithinStandardMessagingWindow,
   isYesOptIn,
 } from '../src/sales-private-replies.js';
+import {
+  buildNoSalesFallbackReply,
+  validateNoSalesReply,
+} from '../src/policy.js';
 
 const SALES_ACCOUNTS = Object.freeze([
   { integrationId: 'cmt0ql9300001msb2pvozfwe9', persona: 'chaya', platform: 'instagram' },
@@ -42,6 +46,16 @@ test('sales replies are locked to the nine approved brand integrations', () => {
   assert.equal(isSalesAccount({
     integrationId: 'not-approved', persona: 'chaya', platform: 'facebook',
   }), false);
+});
+
+test('no-sales validation blocks links and calls to buy while preserving warm replies', () => {
+  assert.equal(
+    validateNoSalesReply('I hear you. Festival tickets have their own motivation somehow 😂'),
+    'I hear you. Festival tickets have their own motivation somehow 😂'
+  );
+  assert.equal(validateNoSalesReply('You can book here: https://example.com'), null);
+  assert.equal(validateNoSalesReply('Have a look at the offer in my bio'), null);
+  assert.equal(buildNoSalesFallbackReply('ren').includes('http'), false);
 });
 
 test('required keywords and reading questions trigger the private offer', () => {
