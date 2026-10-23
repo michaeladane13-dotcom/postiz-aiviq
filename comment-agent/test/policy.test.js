@@ -187,6 +187,20 @@ test('no-sales public replies receive a hard owner rule', () => {
   assert.match(prompt, /must receive no sales pitch, offer, promotion/);
 });
 
+test('sensitive-client public prompt uses post context and recognises puns', () => {
+  const prompt = buildReplyPrompt({
+    persona: 'chaya',
+    postText: 'Other side of the world doing readings at 3am because of jet lag',
+    comment: 'Tell Jet I said hello',
+    relationship: 'regular',
+    sensitiveClient: true,
+  });
+  assert.match(prompt, /sensitive known client/);
+  assert.match(prompt, /context of this exact post/);
+  assert.match(prompt, /jokes, wordplay and puns/);
+  assert.match(prompt, /Tell Jet I said hello/);
+});
+
 test('curated replies stay persona-specific for unmistakably positive comments', () => {
   const replies = ['chaya', 'ren', 'david', 'kumpania', 'daniel'].map((persona) =>
     buildSafeTemplateReply({

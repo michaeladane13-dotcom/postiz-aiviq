@@ -16,7 +16,9 @@ import { GitHubClientData } from './client-data.js';
 import { GitHubClientDirectory } from './client-directory.js';
 import {
   isNoSalesSocialHandle,
+  isSensitiveReplyHandle,
   noSalesOverrideCount,
+  sensitiveReplyOverrideCount,
 } from './contact-overrides.js';
 import { DailyReelPublisher } from './daily-reels.js';
 import { verifyDailyReelOidc } from './github-oidc.js';
@@ -1006,6 +1008,7 @@ function strongestEngagement(...values) {
 
 async function loadRelationship(event, account) {
   const ownerNoSales = isNoSalesSocialHandle(event.username);
+  const ownerSensitive = isSensitiveReplyHandle(event.username);
   const directoryProfile = clientDirectory.match(event.username);
   const opsProfile = clientData.matchSocial({
     username: event.username,
@@ -1014,11 +1017,12 @@ async function loadRelationship(event, account) {
   if (!event.senderId) {
     return {
       relationship: directoryProfile?.relationship || opsProfile?.relationship ||
-        (ownerNoSales ? 'regular' : 'new_follower'),
+        (ownerNoSales || ownerSensitive ? 'regular' : 'new_follower'),
       engagement: strongestEngagement(directoryProfile?.engagement, opsProfile?.engagement),
       notes: '',
       recentHistory: [],
       salesBlocked: Boolean(ownerNoSales || opsProfile?.noSales || opsProfile?.packageStatus),
+      sensitiveClient: ownerSensitive,
     };
   }
 
@@ -1063,12 +1067,13 @@ async function loadRelationship(event, account) {
           ? opsProfile.relationship
         : positiveHistoryCount >= 3
           ? 'regular'
-          : ownerNoSales
+          : ownerNoSales || ownerSensitive
             ? 'regular'
             : 'new_follower',
     engagement: strongestEngagement(directoryProfile?.engagement, opsProfile?.engagement),
     notes: profile?.confirmed ? profile.notes || '' : '',
     salesBlocked: Boolean(ownerNoSales || opsProfile?.noSales || opsProfile?.packageStatus),
+    sensitiveClient: ownerSensitive,
     recentHistory: historyResult.rows.reverse().map((row) => ({
       comment: row.commentText,
       outcome: row.status,
@@ -1430,6 +1435,7 @@ async function processInboxReply(event, account, senderProfile) {
     opsProfile?.noSales ||
     opsProfile?.packageStatus
   );
+  const sensitiveClient = isSensitiveReplyHandle(senderProfile.username);
   const cardThread = await loadChayaCardThreadContext(event, account);
   const decision = classifyInboxMessage(event.text);
   const replyCategory = cardThread.isCardThread
@@ -1463,10 +1469,11 @@ async function processInboxReply(event, account, senderProfile) {
   }
 
   const linkRequested = cardThread.isCardThread && asksWhereChayaCardLink(event.text);
-  let reply = !salesBlocked && cardThread.isCardThread &&
+  let reply = !sensitiveClient && !salesBlocked && cardThread.isCardThread &&
     (linkRequested || decision.category === 'reading_inquiry')
     ? buildChayaCardReadingFollowUp(event.text)
     : (
+      !GENERATION_API_KEY && !sensitiveClient &&
       decision.action === 'template' && decision.category !== 'reading_inquiry'
     )
       ? buildSafeInboxTemplateReply(account.persona, decision.category)
@@ -1499,6 +1506,7 @@ async function processInboxReply(event, account, senderProfile) {
         privateClientContext: privateContext,
         conversationRule: chayaCardThreadPromptRule(cardThread.isCardThread),
         salesBlocked,
+        sensitiveClient,
       });
       reply = cardThread.isCardThread
         ? validateChayaCardFollowUpReply(generated.reply, { linkRequested })
@@ -1509,7 +1517,7 @@ async function processInboxReply(event, account, senderProfile) {
       generationError = String(error.message).slice(0, 1000);
     }
   }
-  if (!reply) {
+  if (!reply && !sensitiveClient) {
     reply = salesBlocked
       ? buildNoSalesFallbackReply(account.persona)
       : buildSafeInboxTemplateReply(account.persona, decision.category) ||
@@ -1856,12 +1864,14 @@ async function processEvent(event) {
         }
         return;
       }
-      const safeTemplate = buildSafeTemplateReply({
-        persona: account.persona,
-        comment: event.text,
-        senderId: event.senderId,
-        relationship: relationship.relationship,
-      });
+      const safeTemplate = !GENERATION_API_KEY && !relationship.sensitiveClient
+        ? buildSafeTemplateReply({
+          persona: account.persona,
+          comment: event.text,
+          senderId: event.senderId,
+          relationship: relationship.relationship,
+        })
+        : null;
 
       if (safeTemplate) {
         if (REPLY_MODE === 'limited_live') {
@@ -1912,6 +1922,7 @@ async function processEvent(event) {
           recentHistory: relationship.recentHistory,
           brandContext: brandKnowledge.contextFor(account.persona, { publicReply: true }),
           salesBlocked: relationship.salesBlocked,
+          sensitiveClient: relationship.sensitiveClient,
         });
       } catch (error) {
         generated.error = String(error.message).slice(0, 1000);
@@ -1921,13 +1932,15 @@ async function processEvent(event) {
         ? validateNoSalesReply(generated.draft)
         : generated.draft;
       const reply = generatedDraft || (
-        relationship.salesBlocked
-          ? buildNoSalesFallbackReply(account.persona)
-          : buildSafeFallbackReply({
-            persona: account.persona,
-            comment: event.text,
-            senderId: event.senderId,
-          })
+        relationship.sensitiveClient
+          ? null
+          : relationship.salesBlocked
+            ? buildNoSalesFallbackReply(account.persona)
+            : buildSafeFallbackReply({
+              persona: account.persona,
+              comment: event.text,
+              senderId: event.senderId,
+            })
       );
       const replyModel = generatedDraft
         ? generated.model
@@ -2116,6 +2129,11 @@ const server = http.createServer(async (request, response) => {
       },
       noSalesOverrides: {
         active: noSalesOverrideCount(),
+      },
+      sensitiveReplyOverrides: {
+        active: sensitiveReplyOverrideCount(),
+        generatedOnly: true,
+        fallbackAction: 'manual_review',
       },
       inboxResponder: {
         enabled: META_INBOX_RESPONDER_ENABLED,

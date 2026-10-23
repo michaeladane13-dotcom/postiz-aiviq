@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isNoSalesSocialHandle,
+  isSensitiveReplyHandle,
   noSalesOverrideCount,
+  sensitiveReplyOverrideCount,
 } from '../src/contact-overrides.js';
 
 test('configured no-sales handles match exactly and case-insensitively', () => {
@@ -18,4 +20,12 @@ test('multiple configured no-sales handles remain distinct', () => {
   assert.equal(isNoSalesSocialHandle('another_client', configured), true);
   assert.equal(isNoSalesSocialHandle('protected_client', configured), true);
   assert.equal(noSalesOverrideCount(configured), 2);
+});
+
+test('sensitive reply handles match exactly without exposing them in source', () => {
+  const configured = 'known_regular_one, known_regular_two';
+  assert.equal(isSensitiveReplyHandle('@KNOWN_REGULAR_ONE', configured), true);
+  assert.equal(isSensitiveReplyHandle('known_regular', configured), false);
+  assert.equal(isSensitiveReplyHandle('known_regular_two_fake', configured), false);
+  assert.equal(sensitiveReplyOverrideCount(configured), 2);
 });

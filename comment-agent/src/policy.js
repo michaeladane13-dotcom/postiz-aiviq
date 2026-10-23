@@ -428,12 +428,15 @@ export function buildReplyPrompt({
   recentHistory = [],
   brandContext = '',
   salesBlocked = false,
+  sensitiveClient = false,
 }) {
   const config = PERSONAS[persona];
   if (!config) throw new Error(`Unknown persona: ${persona}`);
 
   const relationshipRule =
-    relationship === 'friend_regular'
+    sensitiveClient
+      ? 'This person is a known regular who needs especially careful, personal wording. Sound familiar only through the supplied public post, comment and recent exchanges, and never invent shared history.'
+      : relationship === 'friend_regular'
       ? 'This person is a familiar regular with a friend-like social relationship. Sound warmly familiar and natural, but only refer to specific shared history shown below. Do not overstate intimacy.'
       : relationship === 'regular'
         ? 'This person is a returning regular. Acknowledge them with gentle familiarity without inventing shared experiences.'
@@ -449,6 +452,9 @@ export function buildReplyPrompt({
     salesBlocked
       ? 'OWNER RULE: This exact account must receive no sales pitch, offer, promotion, booking direction, call to action or link. Reply warmly only to what they actually said.'
       : 'A relevant sales conversation may be opened only when the comment clearly asks for it.',
+    sensitiveClient
+      ? 'OWNER RULE: This is a sensitive known client. Reply specifically to this comment in the context of this exact post. Never use a canned acknowledgement, generic encouragement, generic thank-you, or generic sales transition. Notice jokes, wordplay and puns, and continue them naturally when appropriate. If a genuinely specific reply cannot be written from the supplied context, do not invent context.'
+      : 'Read the post context before interpreting the comment. Notice jokes, wordplay and puns that depend on the post, and respond naturally when appropriate.',
     'If the active brand reference does not answer a factual question, do not guess.',
     `RELATIONSHIP RULE: ${relationshipRule}`,
     `Verified relationship notes: ${String(relationshipNotes || '(none)').slice(0, 500)}`,

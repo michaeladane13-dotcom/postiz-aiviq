@@ -92,3 +92,17 @@ test('no-sales inbox replies receive a hard owner rule', () => {
   assert.match(prompt, /must receive no sales pitch, offer, promotion/);
   assert.doesNotMatch(prompt, /recommend the smallest suitable current offer/);
 });
+
+test('sensitive-client inbox prompt requires a specific reply and forbids canned wording', () => {
+  const prompt = buildInboxReplyPrompt({
+    displayName: 'Ren',
+    voice: 'Warm and direct.',
+    message: 'That really made me laugh',
+    recentHistory: [{ role: 'user', text: 'You know exactly what I mean' }],
+    sensitiveClient: true,
+  });
+  assert.match(prompt, /sensitive known client/);
+  assert.match(prompt, /specific, personal reply/);
+  assert.match(prompt, /Never use a stock acknowledgement/);
+  assert.match(prompt, /recent conversation/);
+});
