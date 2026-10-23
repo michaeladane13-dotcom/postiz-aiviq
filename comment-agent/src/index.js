@@ -37,6 +37,7 @@ import {
   buildSafeInboxTemplateReply,
   classifyInboxMessage,
   isApprovedInboxAccount,
+  mayUseCuratedReplyFallback,
   validateInboxReply,
 } from './inbox.js';
 import { extractMetaEvents } from './meta-events.js';
@@ -1436,6 +1437,10 @@ async function processInboxReply(event, account, senderProfile) {
     opsProfile?.packageStatus
   );
   const sensitiveClient = isSensitiveReplyHandle(senderProfile.username);
+  const curatedFallbackAllowed = mayUseCuratedReplyFallback({
+    generationConfigured: Boolean(GENERATION_API_KEY),
+    sensitiveClient,
+  });
   const cardThread = await loadChayaCardThreadContext(event, account);
   const decision = classifyInboxMessage(event.text);
   const replyCategory = cardThread.isCardThread
@@ -1473,7 +1478,7 @@ async function processInboxReply(event, account, senderProfile) {
     (linkRequested || decision.category === 'reading_inquiry')
     ? buildChayaCardReadingFollowUp(event.text)
     : (
-      !GENERATION_API_KEY && !sensitiveClient &&
+      curatedFallbackAllowed &&
       decision.action === 'template' && decision.category !== 'reading_inquiry'
     )
       ? buildSafeInboxTemplateReply(account.persona, decision.category)
@@ -1517,7 +1522,7 @@ async function processInboxReply(event, account, senderProfile) {
       generationError = String(error.message).slice(0, 1000);
     }
   }
-  if (!reply && !sensitiveClient) {
+  if (!reply && curatedFallbackAllowed) {
     reply = salesBlocked
       ? buildNoSalesFallbackReply(account.persona)
       : buildSafeInboxTemplateReply(account.persona, decision.category) ||
@@ -1864,7 +1869,11 @@ async function processEvent(event) {
         }
         return;
       }
-      const safeTemplate = !GENERATION_API_KEY && !relationship.sensitiveClient
+      const curatedFallbackAllowed = mayUseCuratedReplyFallback({
+        generationConfigured: Boolean(GENERATION_API_KEY),
+        sensitiveClient: relationship.sensitiveClient,
+      });
+      const safeTemplate = curatedFallbackAllowed
         ? buildSafeTemplateReply({
           persona: account.persona,
           comment: event.text,
@@ -1932,7 +1941,7 @@ async function processEvent(event) {
         ? validateNoSalesReply(generated.draft)
         : generated.draft;
       const reply = generatedDraft || (
-        relationship.sensitiveClient
+        !curatedFallbackAllowed
           ? null
           : relationship.salesBlocked
             ? buildNoSalesFallbackReply(account.persona)
@@ -2146,7 +2155,8 @@ const server = http.createServer(async (request, response) => {
         safeTemplatesAvailableWithoutModel: true,
         generativeRepliesAvailable:
           Boolean(GENERATION_API_KEY) && generationSummary.available !== false,
-        deterministicFallbackEnabled: true,
+        deterministicFallbackEnabled: !Boolean(GENERATION_API_KEY),
+        contextualGenerationRequiredWhenConfigured: true,
         standardWindowHours: 24,
         messagingEndpointErrors,
       },

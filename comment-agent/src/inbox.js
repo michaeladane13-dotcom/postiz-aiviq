@@ -110,6 +110,13 @@ export function buildSafeInboxTemplateReply(persona, category) {
   return TEMPLATES[persona]?.[category] || null;
 }
 
+export function mayUseCuratedReplyFallback({
+  generationConfigured,
+  sensitiveClient = false,
+}) {
+  return !generationConfigured && !sensitiveClient;
+}
+
 export function validateInboxReply(text, sanitize) {
   const reply = sanitize(String(text || '')).slice(0, 1_000);
   if (!reply || FORBIDDEN_OUTBOUND.test(reply)) return null;

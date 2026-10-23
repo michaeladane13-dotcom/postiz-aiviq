@@ -5,6 +5,7 @@ import {
   buildSafeInboxTemplateReply,
   classifyInboxMessage,
   isApprovedInboxAccount,
+  mayUseCuratedReplyFallback,
   validateInboxReply,
 } from '../src/inbox.js';
 
@@ -105,4 +106,13 @@ test('sensitive-client inbox prompt requires a specific reply and forbids canned
   assert.match(prompt, /specific, personal reply/);
   assert.match(prompt, /Never use a stock acknowledgement/);
   assert.match(prompt, /recent conversation/);
+});
+
+test('curated fallback is disabled whenever contextual generation is configured', () => {
+  assert.equal(mayUseCuratedReplyFallback({ generationConfigured: true }), false);
+  assert.equal(mayUseCuratedReplyFallback({ generationConfigured: false }), true);
+  assert.equal(mayUseCuratedReplyFallback({
+    generationConfigured: false,
+    sensitiveClient: true,
+  }), false);
 });
