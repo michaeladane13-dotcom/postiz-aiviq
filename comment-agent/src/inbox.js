@@ -82,6 +82,11 @@ export function isApprovedInboxAccount(account) {
   return Boolean(account && APPROVED_INBOX_INTEGRATIONS.has(account.integrationId));
 }
 
+export function shouldIgnoreInboxMessage(persona, text) {
+  const normalized = String(text || '').normalize('NFKC').trim();
+  return persona === 'chaya' && /^ask$/iu.test(normalized);
+}
+
 export function classifyInboxMessage(text) {
   const normalized = String(text || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
   if (!normalized) return { action: 'review', category: 'empty' };

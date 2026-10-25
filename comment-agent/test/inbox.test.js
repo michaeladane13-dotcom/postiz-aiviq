@@ -6,6 +6,7 @@ import {
   classifyInboxMessage,
   isApprovedInboxAccount,
   mayUseCuratedReplyFallback,
+  shouldIgnoreInboxMessage,
   validateInboxReply,
 } from '../src/inbox.js';
 
@@ -15,6 +16,15 @@ test('locks inbox handling to the nine exact active brand integrations', () => {
   assert.equal(isApprovedInboxAccount({ integrationId: 'cmt3bncar0001l6silkp4gruh' }), true);
   assert.equal(isApprovedInboxAccount({ integrationId: 'cmuhnbkiw0001mtddcb6vugex' }), true);
   assert.equal(isApprovedInboxAccount({ integrationId: 'unknown' }), false);
+});
+
+test('ignores standalone ASK messages only in the Chaya inbox', () => {
+  for (const message of ['ASK', 'ask', ' Ask ', 'aSk']) {
+    assert.equal(shouldIgnoreInboxMessage('chaya', message), true);
+  }
+  assert.equal(shouldIgnoreInboxMessage('ren', 'ASK'), false);
+  assert.equal(shouldIgnoreInboxMessage('chaya', 'Can I ask a question?'), false);
+  assert.equal(shouldIgnoreInboxMessage('chaya', 'ASK PLEASE'), false);
 });
 
 test('templates greetings, thanks and reading inquiries while escalating risky messages', () => {

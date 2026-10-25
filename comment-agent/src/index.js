@@ -38,6 +38,7 @@ import {
   classifyInboxMessage,
   isApprovedInboxAccount,
   mayUseCuratedReplyFallback,
+  shouldIgnoreInboxMessage,
   validateInboxReply,
 } from './inbox.js';
 import { extractMetaEvents } from './meta-events.js';
@@ -1577,6 +1578,11 @@ async function processInboundMessage(event) {
   if (!account || account.platform !== event.platform || !isApprovedInboxAccount(account)) return;
   if (!(await saveInboundMessage(event, account))) return;
 
+  if (shouldIgnoreInboxMessage(account.persona, event.text)) {
+    await updateInboundMessage(event.messageId, 'ignored_owner_keyword_ask');
+    return;
+  }
+
   const senderProfile = await fetchMetaSenderProfile(event, account);
   const opsProfile = clientData.matchSocial({
     username: senderProfile.username,
@@ -2157,6 +2163,9 @@ const server = http.createServer(async (request, response) => {
           Boolean(GENERATION_API_KEY) && generationSummary.available !== false,
         deterministicFallbackEnabled: !Boolean(GENERATION_API_KEY),
         contextualGenerationRequiredWhenConfigured: true,
+        ignoredStandaloneMessages: {
+          chaya: ['ASK'],
+        },
         standardWindowHours: 24,
         messagingEndpointErrors,
       },
