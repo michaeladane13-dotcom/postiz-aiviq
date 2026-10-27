@@ -1815,7 +1815,7 @@ async function processEvent(event) {
         isSalesAccount(account) &&
         !relationship.salesBlocked &&
         isSalesEligibleRelationship(relationship.relationship) &&
-        isSalesTrigger(event.text)
+        isSalesTrigger(event.text, postText)
       ) {
         await processSalesComment(event, account);
         return;
@@ -1824,7 +1824,7 @@ async function processEvent(event) {
         SALES_PRIVATE_REPLIES_ENABLED &&
         isSalesAccount(account) &&
         !isSalesEligibleRelationship(relationship.relationship) &&
-        isDirectSalesInterest(event.text)
+        isDirectSalesInterest(event.text, postText)
       ) {
         if (relationship.salesBlocked) {
           await updateEvent(event.commentId, 'needs_review_client_sales_rule');
@@ -2137,7 +2137,7 @@ const server = http.createServer(async (request, response) => {
         unroutedPersonas: [],
         davidInstagramEnabled: false,
         knownRegularsExcluded: true,
-        triggerMode: 'standalone_keyword_or_reading_question',
+        triggerMode: 'post_requested_keyword_or_reading_question',
         conversationalAgreementExcluded: true,
         rateLimitPerMinute: PRIVATE_REPLY_PER_MINUTE,
         rateLimitPerDay: PRIVATE_REPLY_PER_DAY,

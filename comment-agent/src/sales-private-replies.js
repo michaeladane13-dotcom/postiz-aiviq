@@ -126,7 +126,7 @@ const RETURNING_CLIENT_BODIES = Object.freeze({
 });
 
 const SALES_KEYWORD_REPLY =
-  /^(?:read|ready|yes|me)(?:\s+please)?(?:\s|[.!?❤💜💕💖✨🙏🥰🫶])*$/iu;
+  /^(read|ready|yes|me)(?:\s+please)?(?:\s|[.!?❤💜💕💖✨🙏🥰🫶])*$/iu;
 const READING_QUESTION =
   /(?:\b(?:can|could|would|will|do|does|how|when|where|what|may|please)\b.{0,100}\b(?:read|reading)\b|\b(?:read|reading)\b.{0,100}\?)/iu;
 const YES_REPLY = /^\s*yes(?:\s|[.!?❤💜💕💖✨🙏🥰🫶])*$/iu;
@@ -141,6 +141,16 @@ function stableIndex(value, size) {
 
 function normalize(text) {
   return String(text || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+}
+
+function requestedSalesKeyword(postText, keyword) {
+  const post = normalize(postText);
+  if (!post || !keyword) return false;
+  const escaped = String(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    `\\b(?:comment|reply|say|type|send|drop)\\b[^.!?\\n]{0,100}\\b${escaped}\\b`,
+    'iu'
+  ).test(post);
 }
 
 function salesReplyConfig(persona) {
@@ -158,20 +168,20 @@ export function isSalesAccount(account) {
   );
 }
 
-export function isSalesTrigger(text) {
+export function isSalesTrigger(text, postText = '') {
   const normalized = normalize(text);
-  return Boolean(
-    normalized &&
-    (SALES_KEYWORD_REPLY.test(normalized) || READING_QUESTION.test(normalized))
-  );
+  if (!normalized) return false;
+  if (READING_QUESTION.test(normalized)) return true;
+  const keyword = normalized.match(SALES_KEYWORD_REPLY)?.[1];
+  return Boolean(keyword && requestedSalesKeyword(postText, keyword));
 }
 
-export function isDirectSalesInterest(text) {
+export function isDirectSalesInterest(text, postText = '') {
   const normalized = normalize(text);
-  return Boolean(
-    SALES_KEYWORD_REPLY.test(normalized) ||
-    READING_QUESTION.test(normalized)
-  );
+  if (!normalized) return false;
+  if (READING_QUESTION.test(normalized)) return true;
+  const keyword = normalized.match(SALES_KEYWORD_REPLY)?.[1];
+  return Boolean(keyword && requestedSalesKeyword(postText, keyword));
 }
 
 export function isSalesEligibleRelationship(relationship) {

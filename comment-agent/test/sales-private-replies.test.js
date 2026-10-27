@@ -59,6 +59,7 @@ test('no-sales validation blocks links and calls to buy while preserving warm re
 });
 
 test('required keywords and reading questions trigger the private offer', () => {
+  const keywordPost = 'If this speaks to you, comment READ, READY, YES or ME below.';
   for (const comment of [
     'READ',
     'ready 💜',
@@ -68,7 +69,7 @@ test('required keywords and reading questions trigger the private offer', () => 
     'How can I book a reading',
     'Will you read for someone in Canada?',
   ]) {
-    assert.equal(isSalesTrigger(comment), true, comment);
+    assert.equal(isSalesTrigger(comment, keywordPost), true, comment);
   }
   for (const comment of [
     'Beautiful message',
@@ -83,6 +84,14 @@ test('required keywords and reading questions trigger the private offer', () => 
   }
 });
 
+test('standalone sales keywords require that exact call to action in the post', () => {
+  assert.equal(isSalesTrigger('ME', 'A personal story with no sales call to action.'), false);
+  assert.equal(isSalesTrigger('YES', 'Comment ME and I will send the details.'), false);
+  assert.equal(isSalesTrigger('ME', 'Comment ME and I will send the details.'), true);
+  assert.equal(isSalesTrigger('READY please', 'Type READY below for the link.'), true);
+  assert.equal(isSalesTrigger('READ', ''), false);
+});
+
 test('known regulars stay on the normal relationship-aware reply path', () => {
   assert.equal(isSalesEligibleRelationship('new_follower'), true);
   assert.equal(isSalesEligibleRelationship('regular'), false);
@@ -90,11 +99,12 @@ test('known regulars stay on the normal relationship-aware reply path', () => {
 });
 
 test('returning-client sales replies require direct interest and never use a new-client offer', () => {
-  assert.equal(isDirectSalesInterest('READ'), true);
-  assert.equal(isDirectSalesInterest('ME please'), true);
+  assert.equal(isDirectSalesInterest('READ', 'Comment READ for the details.'), true);
+  assert.equal(isDirectSalesInterest('ME please', 'Comment ME below.'), true);
   assert.equal(isDirectSalesInterest('Can I book a reading?'), true);
   assert.equal(isDirectSalesInterest('Tell me what this means'), false);
   assert.equal(isDirectSalesInterest('me too sister'), false);
+  assert.equal(isDirectSalesInterest('ME', 'A normal conversational post.'), false);
   const reply = buildPrivateSalesReply('chaya', 'returning-comment', { returningClient: true });
   assert.match(reply.message, /returning-client/);
   assert.doesNotMatch(reply.message, /CA\$39|REELS33|reply YES/);
