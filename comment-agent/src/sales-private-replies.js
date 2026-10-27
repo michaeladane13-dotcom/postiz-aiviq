@@ -125,7 +125,8 @@ const RETURNING_CLIENT_BODIES = Object.freeze({
     'Since you asked about another service, tell me what you need help with and I’ll point you to the right option. You can also see my current work here: https://danielpsychicartist.space/checkout.',
 });
 
-const SALES_KEYWORD = /\b(?:read|ready|yes|me)\b/iu;
+const SALES_KEYWORD_REPLY =
+  /^(?:read|ready|yes|me)(?:\s+please)?(?:\s|[.!?❤💜💕💖✨🙏🥰🫶])*$/iu;
 const READING_QUESTION =
   /(?:\b(?:can|could|would|will|do|does|how|when|where|what|may|please)\b.{0,100}\b(?:read|reading)\b|\b(?:read|reading)\b.{0,100}\?)/iu;
 const YES_REPLY = /^\s*yes(?:\s|[.!?❤💜💕💖✨🙏🥰🫶])*$/iu;
@@ -159,13 +160,16 @@ export function isSalesAccount(account) {
 
 export function isSalesTrigger(text) {
   const normalized = normalize(text);
-  return Boolean(normalized && (SALES_KEYWORD.test(normalized) || READING_QUESTION.test(normalized)));
+  return Boolean(
+    normalized &&
+    (SALES_KEYWORD_REPLY.test(normalized) || READING_QUESTION.test(normalized))
+  );
 }
 
 export function isDirectSalesInterest(text) {
   const normalized = normalize(text);
   return Boolean(
-    /^(?:read|ready|yes|me)(?:\s|[.!?❤💜💕💖✨🙏🥰🫶])*$/iu.test(normalized) ||
+    SALES_KEYWORD_REPLY.test(normalized) ||
     READING_QUESTION.test(normalized)
   );
 }

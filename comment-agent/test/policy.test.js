@@ -201,6 +201,16 @@ test('sensitive-client public prompt uses post context and recognises puns', () 
   assert.match(prompt, /Tell Jet I said hello/);
 });
 
+test('public prompt treats shared feelings as conversation rather than a sale', () => {
+  const prompt = buildReplyPrompt({
+    persona: 'chaya',
+    postText: 'A personal story about something Chaya also experiences.',
+    comment: 'me too sister',
+  });
+  assert.match(prompt, /agreeing, relating, empathising or sharing a feeling/);
+  assert.match(prompt, /Do not turn it into a reading offer/);
+});
+
 test('curated replies stay persona-specific for unmistakably positive comments', () => {
   const replies = ['chaya', 'ren', 'david', 'kumpania', 'daniel'].map((persona) =>
     buildSafeTemplateReply({

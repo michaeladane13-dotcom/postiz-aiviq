@@ -61,16 +61,24 @@ test('no-sales validation blocks links and calls to buy while preserving warm re
 test('required keywords and reading questions trigger the private offer', () => {
   for (const comment of [
     'READ',
-    'I am ready 💜',
+    'ready 💜',
     'YES please',
-    'Can you help me?',
+    'ME',
     'Could I have a reading?',
     'How can I book a reading',
     'Will you read for someone in Canada?',
   ]) {
     assert.equal(isSalesTrigger(comment), true, comment);
   }
-  for (const comment of ['Beautiful message', 'Already booked', 'I loved this']) {
+  for (const comment of [
+    'Beautiful message',
+    'Already booked',
+    'I loved this',
+    'me too sister',
+    'Can you help me?',
+    'I am ready for the weekend',
+    'yes, that is exactly it',
+  ]) {
     assert.equal(isSalesTrigger(comment), false, comment);
   }
 });
@@ -83,8 +91,10 @@ test('known regulars stay on the normal relationship-aware reply path', () => {
 
 test('returning-client sales replies require direct interest and never use a new-client offer', () => {
   assert.equal(isDirectSalesInterest('READ'), true);
+  assert.equal(isDirectSalesInterest('ME please'), true);
   assert.equal(isDirectSalesInterest('Can I book a reading?'), true);
   assert.equal(isDirectSalesInterest('Tell me what this means'), false);
+  assert.equal(isDirectSalesInterest('me too sister'), false);
   const reply = buildPrivateSalesReply('chaya', 'returning-comment', { returningClient: true });
   assert.match(reply.message, /returning-client/);
   assert.doesNotMatch(reply.message, /CA\$39|REELS33|reply YES/);

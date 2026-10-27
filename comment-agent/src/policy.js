@@ -455,6 +455,7 @@ export function buildReplyPrompt({
     sensitiveClient
       ? 'OWNER RULE: This is a sensitive known client. Reply specifically to this comment in the context of this exact post. Never use a canned acknowledgement, generic encouragement, generic thank-you, or generic sales transition. Notice jokes, wordplay and puns, and continue them naturally when appropriate. If a genuinely specific reply cannot be written from the supplied context, do not invent context.'
       : 'Read the post context before interpreting the comment. Notice jokes, wordplay and puns that depend on the post, and respond naturally when appropriate.',
+    'When a commenter is simply agreeing, relating, empathising or sharing a feeling, answer that human moment warmly. Do not turn it into a reading offer, booking prompt or private-message handoff.',
     'If the active brand reference does not answer a factual question, do not guess.',
     `RELATIONSHIP RULE: ${relationshipRule}`,
     `Verified relationship notes: ${String(relationshipNotes || '(none)').slice(0, 500)}`,

@@ -2137,6 +2137,8 @@ const server = http.createServer(async (request, response) => {
         unroutedPersonas: [],
         davidInstagramEnabled: false,
         knownRegularsExcluded: true,
+        triggerMode: 'standalone_keyword_or_reading_question',
+        conversationalAgreementExcluded: true,
         rateLimitPerMinute: PRIVATE_REPLY_PER_MINUTE,
         rateLimitPerDay: PRIVATE_REPLY_PER_DAY,
         metaMarketingTokenRequiredOutside24Hours: true,
